@@ -380,7 +380,7 @@ class WebDatasetDatasource(FileBasedDatasource):
 
         progress = None
         if self.progress_tracker is not None:
-            progress = self.progress_tracker.get_initial_progress.remote()
+            progress = ray.get(self.progress_tracker.get_initial_progress.remote())
 
             logger.info(
                 f"Found {len(progress.completed_keys)} completed keys across {len(progress.completed_shards)} shards."
@@ -401,11 +401,17 @@ class WebDatasetDatasource(FileBasedDatasource):
                     "__key__": sample["__key__"],
                     "path": sample["path"],
                 }
-                self.progress_tracker.update_in_progress.remote([sample_progress_dict])
+                ray.get(
+                    self.progress_tracker.update_in_progress.remote(
+                        [sample_progress_dict]
+                    )
+                )
 
                 if sample["__key__"] in progress.completed_keys:
-                    self.progress_tracker.update_completed.remote(
-                        [sample_progress_dict]
+                    ray.get(
+                        self.progress_tracker.update_completed.remote(
+                            [sample_progress_dict]
+                        )
                     )
                     continue
 

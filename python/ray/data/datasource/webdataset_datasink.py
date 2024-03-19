@@ -51,7 +51,7 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
         samples = _make_iterable(block)
 
         # progress tracker bits
-        should_write_paths = self.progress_tracker.should_write_paths_.remote()
+        should_write_paths = ray.get(self.progress_tracker.should_write_paths_.remote())
         completed = []
 
         for sample in samples:
@@ -82,4 +82,4 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
         stream.close()
 
         if self.progress_tracker is not None:
-            self.progress_tracker.update_completed.remote(completed)
+            ray.get(self.progress_tracker.update_completed.remote(completed))
