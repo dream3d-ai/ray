@@ -62,7 +62,7 @@ class ProgressTracker:
                 completed_paths=[], completed_keys=[], in_progress_paths=[]
             )
 
-        with fsspec.open(self.save_path, "r") as f:
+        with fsspec.open(self.save_path, "rb") as f:
             self.progress = Progress.from_json(f.read())
 
     def sigkill_handler(self, signum, frame):
@@ -121,6 +121,6 @@ class ProgressTracker:
             raise ImportError("Please install fsspec")
 
         logger.debug(f"Writing progress tracker to {self.save_path}")
-        with fsspec.open(self.save_path, "w") as f:
+        with fsspec.open(self.save_path, "wb") as f:
             f.write(self.get_current_progress().to_json())
         return True
