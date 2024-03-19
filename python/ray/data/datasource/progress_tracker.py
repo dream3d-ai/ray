@@ -20,8 +20,15 @@ class Progress:
     in_progress_paths: list[str]
 
     @property
-    def skip_files(self) -> list[str]:
+    def skip_files(self) -> set[str]:
         return set(self.completed_paths) + set(self.in_progress_paths)
+
+    def to_json(self) -> bytes:
+        return json.dumps(self.__dict__).encode("utf-8")
+
+    @classmethod
+    def from_json(cls, json_str: str) -> "Progress":
+        return cls(**json.loads(json_str))
 
 
 @ray.remote
@@ -46,18 +53,17 @@ class ProgressTracker:
 
     def load_progress(self):
         try:
-            import fssepc
+            import fsspec
         except ImportError:
             raise ImportError("Please install fsspec")
 
         if not fsspec.exists(self.save_path):
-            self.in_progress = pd.DataFrame(columns=["__key__", "path"])
-            self.completed = pd.DataFrame(columns=["__key__", "path"])
+            self.progress = Progress(
+                completed_paths=[], completed_keys=[], in_progress_paths=[]
+            )
 
-        with fssepc.open(self.save_path, "r") as f:
-            progress_dict = json.loads(f)
-            self.in_progress = pd.read_json(progress_dict["in_progress"])
-            self.completed = pd.read_json(progress_dict["completed"])
+        with fsspec.open(self.save_path, "r") as f:
+            self.progress = Progress.from_json(f.read())
 
     def sigkill_handler(self, signum, frame):
         self.write()
@@ -109,6 +115,12 @@ class ProgressTracker:
         return self.initial_progress
 
     def write(self) -> bool:
+        try:
+            import fsspec
+        except ImportError:
+            raise ImportError("Please install fsspec")
+
         logger.debug(f"Writing progress tracker to {self.save_path}")
-        self.completed.to_parquet(self.save_path)
+        with fsspec.open(self.save_path, "w") as f:
+            f.write(self.get_current_progress().to_json())
         return True
