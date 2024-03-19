@@ -401,13 +401,23 @@ class WebDatasetDatasource(FileBasedDatasource):
             ]
             self.progress_tracker.update_in_progress.remote(in_progress)
 
+        # Mark samples that have already been processed as completed
+        if progress is not None and self.progress_tracker is not None:
+            completed_samples = [
+                {"__key__": sample["__key__"], "path": path}
+                for sample in samples
+                if sample["__key__"] in progress.completed_keys
+            ]
+            self.progress_tracker.update_completed.remote(completed_samples)
+
+            # remove completed_samples from samples based on __key__
+            samples = [
+                sample
+                for sample in samples
+                if sample["__key__"] not in progress.completed_keys
+            ]
+
         for sample in samples:
-            if progress and sample["__key__"] in progress.completed_keys:
-                # if the path isnt in completed shards, update the path (aka, index is incorrect)
-                if self.progress_tracker and path not in progress.completed_paths:
-                    logger.debug(f"Updating path for {sample['__key__']} to {path}")
-                    self.progress_tracker.update_path.remote(sample["__key__"], path)
-                continue
             if self.decoder is not None:
                 sample = _apply_list(self.decoder, sample, default=_default_decoder)
             yield pd.DataFrame({k: [v] for k, v in sample.items()})

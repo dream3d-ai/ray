@@ -2,6 +2,7 @@ import atexit
 import json
 import logging
 import signal
+from collections import defaultdict
 from dataclasses import dataclass, field
 
 import ray
@@ -15,18 +16,25 @@ CACHED_PROGRESS_TRACKERS = {}
 class Progress:
     completed_paths: set[str] = field(default_factory=set)
     completed_keys: set[str] = field(default_factory=set)
-    in_progress_paths: set[str] = field(default_factory=set)
+    in_progress: dict[str, set[str]] = field(
+        default_factory=lambda: defaultdict(set), metadata="path -> keys"
+    )
 
     @property
     def skip_files(self) -> set[str]:
-        return self.completed_paths - self.in_progress_paths
+        unfinished_paths = set(
+            path for (path, keys) in self.in_progress.items() if keys
+        )
+        return self.completed_paths - unfinished_paths
 
     def to_json(self) -> str:
         return json.dumps(
             {
                 "completed_paths": list(self.completed_paths),
                 "completed_keys": list(self.completed_keys),
-                "in_progress_paths": list(self.in_progress_paths),
+                "in_progress": {
+                    path: list(keys) for path, keys in self.in_progress.items()
+                },
             }
         )
 
@@ -36,14 +44,16 @@ class Progress:
         return cls(
             completed_paths=set(raw_data["completed_paths"]),
             completed_keys=set(raw_data["completed_keys"]),
-            in_progress_paths=set(raw_data["in_progress_paths"]),
+            in_progress={
+                path: set(keys) for path, keys in raw_data["in_progress"].items()
+            },
         )
 
     def deepcopy(self):
         return Progress(
             completed_paths=self.completed_paths.copy(),
             completed_keys=self.completed_keys.copy(),
-            in_progress_paths=self.in_progress_paths.copy(),
+            in_progress=self.in_progress.copy(),
         )
 
 
@@ -98,7 +108,8 @@ class ProgressTracker:
         assert all("__key__" in item for item in items) and all(
             "path" in item for item in items
         )
-        self.current_progress.in_progress_paths.update([item["path"] for item in items])
+        for item in items:
+            self.current_progress.in_progress[item["path"]].add(item["__key__"])
 
     def update_completed(self, items: list[dict[str, str]]):
         assert all("__key__" in item for item in items) and all(
@@ -108,12 +119,12 @@ class ProgressTracker:
         self.current_progress.completed_paths.update([item["path"] for item in items])
         self.current_progress.completed_keys.update([item["__key__"] for item in items])
 
+        for item in items:
+            self.current_progress.in_progress[item["path"]].discard(item["__key__"])
+
         self.counter += 1
         if self.counter % self.save_interval == 0:
             self.write()
-
-    def update_path(self, _: str, path: str):
-        self.current_progress.completed_paths.update(path)
 
     def should_write_paths_(self) -> bool:
         return self.write_paths_
