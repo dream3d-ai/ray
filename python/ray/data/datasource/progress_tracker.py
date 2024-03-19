@@ -57,6 +57,7 @@ class Progress:
         )
 
 
+@ray.remote
 class ProgressTracker:
     def __init__(
         self,
