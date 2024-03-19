@@ -57,7 +57,7 @@ class Progress:
         )
 
 
-@ray.remote
+@ray.remote(max_retries=0)
 class ProgressTracker:
     def __init__(
         self,
