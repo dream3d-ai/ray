@@ -347,8 +347,8 @@ class WebDatasetDatasource(FileBasedDatasource):
         self.suffixes = suffixes
         self.verbose_open = verbose_open
 
-        if progress_path and not progress_path.endswith(".json"):
-            raise ValueError("Progress path must end with .json")
+        if progress_path and not progress_path.endswith(".progress"):
+            raise ValueError("Progress path must end with .progress")
 
         self.progress_tracker = None
         if progress_path:
