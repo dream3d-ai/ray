@@ -51,10 +51,7 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
         stream = tarfile.open(fileobj=file, mode="w|")
         samples = _make_iterable(block)
 
-        # progress tracker bits
-        should_write_paths = ray.get(self.progress_tracker.should_write_paths_.remote())
-        completed = []
-
+        completed_keys = []
         for sample in samples:
             if not isinstance(sample, dict):
                 sample = sample.as_pydict()
@@ -65,9 +62,7 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
             key = sample["__key__"]
 
             # add to progress tracker, remove path is not needed
-            completed.append({"__key__": key, "path": sample.get("path")})
-            if not should_write_paths:
-                sample.pop("path", None)
+            completed_keys.append(key)
 
             for k, v in sample.items():
                 if v is None or k.startswith("__"):
@@ -83,4 +78,4 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
         stream.close()
 
         if self.progress_tracker is not None:
-            ray.get(self.progress_tracker.update_completed.remote(completed))
+            ray.get(self.progress_tracker.update_completed.remote(completed_keys))

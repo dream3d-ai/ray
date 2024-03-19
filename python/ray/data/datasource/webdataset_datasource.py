@@ -329,17 +329,6 @@ class WebDatasetDatasource(FileBasedDatasource):
         progress_path: str | None = None,
         **file_based_datasource_kwargs,
     ):
-        write_paths_to_sink = file_based_datasource_kwargs.get("include_paths", False)
-
-        if progress_path is not None:
-            logger.warning(
-                (
-                    "Warning: Progress tracking requires `path` to be included in the dataset. "
-                    "This has been automatically enabled. Make sure to not remove it from the samples."
-                )
-            )
-            file_based_datasource_kwargs["include_paths"] = True
-
         super().__init__(paths, **file_based_datasource_kwargs)
 
         self.decoder = decoder
@@ -355,7 +344,6 @@ class WebDatasetDatasource(FileBasedDatasource):
         if progress_path:
             self.progress_tracker = ProgressTracker.remote(
                 progress_path,
-                write_paths_=write_paths_to_sink,
             )
             CACHED_PROGRESS_TRACKERS[progress_path] = self.progress_tracker
 
@@ -398,20 +386,16 @@ class WebDatasetDatasource(FileBasedDatasource):
 
         for sample in samples:
             if progress is not None and self.progress_tracker is not None:
-                sample_progress_dict = {
-                    "__key__": sample["__key__"],
-                    "path": sample["path"],
-                }
                 ray.get(
                     self.progress_tracker.update_in_progress.remote(
-                        [sample_progress_dict]
+                        [(sample["__key__"], path)]
                     )
                 )
 
                 if sample["__key__"] in progress.completed_keys:
                     ray.get(
                         self.progress_tracker.update_completed.remote(
-                            [sample_progress_dict]
+                            [sample["__key__"]]
                         )
                     )
                     continue

@@ -20,6 +20,11 @@ class Progress:
         default_factory=lambda: defaultdict(set), metadata="path -> keys"
     )
 
+    _keys_to_paths: dict[str, str] = field(default_factory=dict, metadata="key -> path")
+
+    def get_path(self, key: str) -> str | None:
+        return self._keys_to_paths.get(key)
+
     @property
     def skip_files(self) -> set[str]:
         unfinished_paths = set(
@@ -47,6 +52,11 @@ class Progress:
             in_progress={
                 path: set(keys) for path, keys in raw_data["in_progress"].items()
             },
+            _keys_to_paths={
+                key: path
+                for path, keys in raw_data["in_progress"].items()
+                for key in keys
+            },
         )
 
     def deepcopy(self):
@@ -54,7 +64,22 @@ class Progress:
             completed_paths=self.completed_paths.copy(),
             completed_keys=self.completed_keys.copy(),
             in_progress=self.in_progress.copy(),
+            _keys_to_paths=self._keys_to_paths.copy(),
         )
+
+    def mark_completed(self, key: str):
+        self.completed_keys.add(key)
+
+        path = self.get_path(key)
+        if path:
+            self.completed_paths.add(path)
+
+        self.in_progress[path].discard(key)
+        self._keys_to_paths.pop(key, None)
+
+    def mark_in_progress(self, key: str, path: str):
+        self.in_progress[path].add(key)
+        self._keys_to_paths[key] = path
 
 
 @ray.remote
@@ -104,23 +129,13 @@ class ProgressTracker:
     def set_save_interval(self, save_interval: int):
         self.save_interval = save_interval
 
-    def update_in_progress(self, items: list[dict[str, str]]):
-        assert all("__key__" in item for item in items) and all(
-            "path" in item for item in items
-        )
-        for item in items:
-            self.current_progress.in_progress[item["path"]].add(item["__key__"])
+    def update_in_progress(self, items: tuple[str, str]):
+        for key, path in items:
+            self.current_progress.mark_in_progress(key, path)
 
-    def update_completed(self, items: list[dict[str, str]]):
-        assert all("__key__" in item for item in items) and all(
-            "path" in item for item in items
-        )
-
-        self.current_progress.completed_paths.update([item["path"] for item in items])
-        self.current_progress.completed_keys.update([item["__key__"] for item in items])
-
-        for item in items:
-            self.current_progress.in_progress[item["path"]].discard(item["__key__"])
+    def update_completed(self, keys: list[str]):
+        for key in keys:
+            self.current_progress.mark_completed(key)
 
         self.counter += 1
         if self.counter % self.save_interval == 0:
