@@ -57,12 +57,11 @@ class Progress:
         )
 
 
-@ray.remote(max_retries=0)
 class ProgressTracker:
     def __init__(
         self,
         save_path: str,
-        save_interval: int = 1,
+        save_interval: int = 1000,
         write_paths_: bool = False,
     ):
         try:
