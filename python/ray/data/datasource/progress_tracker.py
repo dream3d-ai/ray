@@ -143,5 +143,5 @@ class ProgressTracker:
 
         logger.debug(f"Writing progress tracker to {self.save_path}")
         with fsspec.open(self.save_path, "wb", compression="gzip") as f:
-            f.write(self.get_current_progress().to_json().encode())
+            f.write(self.get_current_progress().to_json().encode("utf-8"))
         return True
