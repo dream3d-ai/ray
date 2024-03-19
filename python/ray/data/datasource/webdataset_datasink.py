@@ -34,6 +34,9 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
 
         self.encoder = encoder
 
+        if progress_path and not progress_path.endswith(".json"):
+            raise ValueError("Progress path must end with .json")
+
         self.progress_tracker = CACHED_PROGRESS_TRACKERS.get(progress_path)
         if self.progress_tracker is not None:
             logger.info(f"Reusing progress tracker at {progress_path}")
@@ -71,4 +74,4 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
         stream.close()
 
         if self.progress_tracker is not None:
-            self.progress_tracker.update.remote(progress)
+            self.progress_tracker.update_completed.remote(progress)

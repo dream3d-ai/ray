@@ -9,7 +9,6 @@ import tarfile
 from functools import partial
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
 
-import ray
 from ray.data.block import BlockAccessor
 from ray.data.datasource.file_based_datasource import FileBasedDatasource
 from ray.data.datasource.progress_tracker import (
@@ -347,12 +346,17 @@ class WebDatasetDatasource(FileBasedDatasource):
         self.filerename = filerename
         self.suffixes = suffixes
         self.verbose_open = verbose_open
-        self.progress_tracker = ProgressTracker.remote(
-            progress_path,
-            write_paths_=write_paths_to_sink,
-        )
 
-        CACHED_PROGRESS_TRACKERS[progress_path] = self.progress_tracker
+        if progress_path and not progress_path.endswith(".json"):
+            raise ValueError("Progress path must end with .json")
+
+        self.progress_tracker = None
+        if progress_path:
+            self.progress_tracker = ProgressTracker.remote(
+                progress_path,
+                write_paths_=write_paths_to_sink,
+            )
+            CACHED_PROGRESS_TRACKERS[progress_path] = self.progress_tracker
 
     def _read_stream(self, stream: "pyarrow.NativeFile", path: str):
         """Read and decode samples from a stream.
@@ -376,15 +380,12 @@ class WebDatasetDatasource(FileBasedDatasource):
 
         completed_keys, completed_shards = {}, {}
 
+        progress = None
         if self.progress_tracker is not None:
-            completed_keys_ref, completed_shards_ref = ray.get(
-                self.progress_tracker.get_initial_progress.remote()
-            )
-            completed_keys = set(ray.get(completed_keys_ref))
-            completed_shards = set(ray.get(completed_shards_ref))
+            progress = self.progress_tracker.get_initial_progress.remote()
 
             logger.info(
-                f"Found {len(completed_keys)} completed keys across {len(completed_shards)} shards."
+                f"Found {len(progress.completed_keys)} completed keys across {len(progress.completed_shards)} shards."
             )
 
         files = _tar_file_iterator(
@@ -392,9 +393,16 @@ class WebDatasetDatasource(FileBasedDatasource):
             fileselect=self.fileselect,
             filerename=self.filerename,
             verbose_open=self.verbose_open,
-            skip_files=completed_shards,
+            skip_files=progress.skip_files if progress else None,
         )
         samples = _group_by_keys(files, meta=dict(__url__=path), suffixes=self.suffixes)
+
+        if self.progress_tracker is not None:
+            in_progress = [
+                {"__key__": sample["__key__"], "path": path} for sample in samples
+            ]
+            self.progress_tracker.update_in_progress.remote(in_progress)
+
         for sample in samples:
             if sample["__key__"] in completed_keys:
                 # if the path isnt in completed shards, update the path (aka, index is incorrect)
