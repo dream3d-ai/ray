@@ -73,13 +73,13 @@ class ProgressTracker:
         self.save_path = save_path
         self.write_paths_ = write_paths_
 
-        if not fsspec.exists(self.save_path):
-            logger.info(f"Creating new progress tracker at {self.save_path}")
-            self.current_progress = Progress()
-        else:
-            logger.info(f"Loading progress tracker from {self.save_path}")
+        try:
             with fsspec.open(self.save_path, "rb", compression="gzip") as f:
                 self.current_progress = Progress.load(f.read())
+            logger.info(f"Loading progress from {self.save_path}")
+        except FileNotFoundError:
+            logger.info(f"Creating new progress tracker at {self.save_path}")
+            self.current_progress = Progress()
 
         self.initial_progress = self.current_progress.deepcopy()
 
