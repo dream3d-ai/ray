@@ -33,8 +33,7 @@ class Progress:
                 "completed_paths": list(self.completed_paths),
                 "completed_keys": list(self.completed_keys),
                 "in_progress": {
-                    path: list(keys) for path, keys in self.in_progress.items()
-                    if keys
+                    path: list(keys) for path, keys in self.in_progress.items() if keys
                 },
             }
         )

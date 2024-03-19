@@ -395,29 +395,20 @@ class WebDatasetDatasource(FileBasedDatasource):
         )
         samples = _group_by_keys(files, meta=dict(__url__=path), suffixes=self.suffixes)
 
-        if self.progress_tracker is not None:
-            in_progress = [
-                {"__key__": sample["__key__"], "path": path} for sample in samples
-            ]
-            self.progress_tracker.update_in_progress.remote(in_progress)
-
-        # Mark samples that have already been processed as completed
-        if progress is not None and self.progress_tracker is not None:
-            completed_samples = [
-                {"__key__": sample["__key__"], "path": path}
-                for sample in samples
-                if sample["__key__"] in progress.completed_keys
-            ]
-            self.progress_tracker.update_completed.remote(completed_samples)
-
-            # remove completed_samples from samples based on __key__
-            samples = [
-                sample
-                for sample in samples
-                if sample["__key__"] not in progress.completed_keys
-            ]
-
         for sample in samples:
+            if progress is not None and self.progress_tracker is not None:
+                sample_progress_dict = {
+                    "__key__": sample["__key__"],
+                    "path": sample["path"],
+                }
+                self.progress_tracker.update_in_progress.remote([sample_progress_dict])
+
+                if sample["__key__"] in progress.completed_keys:
+                    self.progress_tracker.update_completed.remote(
+                        [sample_progress_dict]
+                    )
+                    continue
+
             if self.decoder is not None:
                 sample = _apply_list(self.decoder, sample, default=_default_decoder)
             yield pd.DataFrame({k: [v] for k, v in sample.items()})

@@ -33,12 +33,16 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
         super().__init__(path, file_format="tar", **file_datasink_kwargs)
 
         self.encoder = encoder
+        self.progress_tracker = None
 
         if progress_path and not progress_path.endswith(".progress"):
             raise ValueError("Progress path must end with .progress")
 
-        self.progress_tracker = CACHED_PROGRESS_TRACKERS.get(progress_path)
-        if self.progress_tracker is not None:
+        if progress_path:
+            self.progress_tracker = CACHED_PROGRESS_TRACKERS.get(progress_path)
+            if self.progress_tracker is None:
+                raise Exception(f"Progress tracker at {progress_path} not found")
+
             logger.info(f"Reusing progress tracker at {progress_path}")
             self.progress_tracker.set_save_interval.remote(save_interval)
 
@@ -46,7 +50,10 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
         stream = tarfile.open(fileobj=file, mode="w|")
         samples = _make_iterable(block)
 
+        # progress tracker bits
+        should_write_paths = self.progress_tracker.should_write_paths_.remote()
         completed = []
+
         for sample in samples:
             if not isinstance(sample, dict):
                 sample = sample.as_pydict()
@@ -56,8 +63,9 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
                 sample["__key__"] = uuid.uuid4().hex
             key = sample["__key__"]
 
+            # add to progress tracker, remove path is not needed
             completed.append({"__key__": key, "path": sample.get("path")})
-            if not self.progress_tracker.should_write_paths_.remote():
+            if not should_write_paths:
                 sample.pop("path", None)
 
             for k, v in sample.items():
