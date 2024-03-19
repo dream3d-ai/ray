@@ -2,9 +2,7 @@ import atexit
 import json
 import logging
 import signal
-from dataclasses import dataclass
-
-import pandas as pd
+from dataclasses import dataclass, field
 
 import ray
 
@@ -15,20 +13,38 @@ CACHED_PROGRESS_TRACKERS = {}
 
 @dataclass
 class Progress:
-    completed_paths: list[str]
-    completed_keys: list[str]
-    in_progress_paths: list[str]
+    completed_paths: set[str] = field(default_factory=set)
+    completed_keys: set[str] = field(default_factory=set)
+    in_progress_paths: set[str] = field(default_factory=set)
 
     @property
     def skip_files(self) -> set[str]:
-        return set(self.completed_paths) + set(self.in_progress_paths)
+        return self.completed_paths.union(self.in_progress_paths)
 
-    def to_json(self) -> bytes:
-        return json.dumps(self.__dict__).encode("utf-8")
+    def to_json(self) -> str:
+        return json.dumps(
+            {
+                "completed_paths": list(self.completed_paths),
+                "completed_keys": list(self.completed_keys),
+                "in_progress_paths": list(self.in_progress_paths),
+            }
+        )
 
     @classmethod
-    def from_json(cls, json_str: str) -> "Progress":
-        return cls(**json.loads(json_str))
+    def load(cls, json_bytes: bytes) -> "Progress":
+        raw_data = json.loads(json_bytes)
+        return cls(
+            completed_paths=set(raw_data["completed_paths"]),
+            completed_keys=set(raw_data["completed_keys"]),
+            in_progress_paths=set(raw_data["in_progress_paths"]),
+        )
+
+    def deepcopy(self):
+        return Progress(
+            completed_paths=self.completed_paths.copy(),
+            completed_keys=self.completed_keys.copy(),
+            in_progress_paths=self.in_progress_paths.copy(),
+        )
 
 
 @ray.remote
@@ -39,31 +55,29 @@ class ProgressTracker:
         save_interval: int = 1,
         write_paths_: bool = False,
     ):
+        try:
+            import fsspec
+        except ImportError:
+            raise ImportError("Please install fsspec")
+
         self.save_path = save_path
         self.write_paths_ = write_paths_
 
-        self.load_progress()
-        self.initial_progress = self.get_current_progress()
+        if not fsspec.exists(self.save_path):
+            logger.info(f"Creating new progress tracker at {self.save_path}")
+            self.current_progress = Progress()
+        else:
+            logger.info(f"Loading progress tracker from {self.save_path}")
+            with fsspec.open(self.save_path, "rb", compression="gzip") as f:
+                self.current_progress = Progress.load(f.read())
+
+        self.initial_progress = self.current_progress.deepcopy()
 
         self.counter = 0
         self.save_interval = save_interval
 
         atexit.register(self.write)
         self.init_signal_handlers()
-
-    def load_progress(self):
-        try:
-            import fsspec
-        except ImportError:
-            raise ImportError("Please install fsspec")
-
-        if not fsspec.exists(self.save_path):
-            self.progress = Progress(
-                completed_paths=[], completed_keys=[], in_progress_paths=[]
-            )
-
-        with fsspec.open(self.save_path, "rb") as f:
-            self.progress = Progress.from_json(f.read())
 
     def sigkill_handler(self, signum, frame):
         self.write()
@@ -84,32 +98,28 @@ class ProgressTracker:
         assert all("__key__" in item for item in items) and all(
             "path" in item for item in items
         )
-        self.in_progress = pd.concat(
-            [self.in_progress, pd.DataFrame(items)], ignore_index=True
-        )
+        self.current_progress.in_progress_paths.update([item["path"] for item in items])
 
     def update_completed(self, items: list[dict[str, str]]):
-        assert all("__key__" in item for item in items)
-        self.completed = pd.concat(
-            [self.completed, pd.DataFrame(items)], ignore_index=True
+        assert all("__key__" in item for item in items) and all(
+            "path" in item for item in items
         )
+
+        self.current_progress.completed_paths.update([item["path"] for item in items])
+        self.current_progress.completed_keys.update([item["__key__"] for item in items])
 
         self.counter += 1
         if self.counter % self.save_interval == 0:
             self.write()
 
-    def update_path(self, key: str, path: str):
-        self.completed.loc[self.completed["__key__"] == key, "path"] = path
+    def update_path(self, _: str, path: str):
+        self.current_progress.completed_paths.update(path)
 
     def should_write_paths_(self) -> bool:
         return self.write_paths_
 
     def get_current_progress(self) -> Progress:
-        return Progress(
-            completed_paths=self.completed["path"].tolist(),
-            completed_keys=self.completed["__key__"].tolist(),
-            in_progress_paths=self.in_progress["path"].tolist(),
-        )
+        return self.current_progress
 
     def get_initial_progress(self) -> Progress:
         return self.initial_progress
@@ -121,6 +131,6 @@ class ProgressTracker:
             raise ImportError("Please install fsspec")
 
         logger.debug(f"Writing progress tracker to {self.save_path}")
-        with fsspec.open(self.save_path, "wb") as f:
-            f.write(self.get_current_progress().to_json())
+        with fsspec.open(self.save_path, "wb", compression="gzip") as f:
+            f.write(self.get_current_progress().to_json().encode())
         return True
