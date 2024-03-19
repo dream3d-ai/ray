@@ -384,7 +384,7 @@ class WebDatasetDatasource(FileBasedDatasource):
             progress = ray.get(self.progress_tracker.get_initial_progress.remote())
 
             logger.info(
-                f"Found {len(progress.completed_keys)} completed keys across {len(progress.completed_shards)} shards."
+                f"Found {len(progress.completed_keys)} completed keys across {len(progress.completed_paths)} files."
             )
 
         files = _tar_file_iterator(
