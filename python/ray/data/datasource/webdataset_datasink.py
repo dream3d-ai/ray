@@ -7,6 +7,7 @@ from typing import Optional, Union
 
 import pyarrow
 
+import ray
 from ray.data.block import BlockAccessor
 from ray.data.datasource.file_datasink import BlockBasedFileDatasink
 from ray.data.datasource.progress_tracker import CACHED_PROGRESS_TRACKERS

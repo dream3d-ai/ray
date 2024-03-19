@@ -9,6 +9,7 @@ import tarfile
 from functools import partial
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
 
+import ray
 from ray.data.block import BlockAccessor
 from ray.data.datasource.file_based_datasource import FileBasedDatasource
 from ray.data.datasource.progress_tracker import (
