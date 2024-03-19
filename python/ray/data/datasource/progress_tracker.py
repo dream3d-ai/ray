@@ -34,6 +34,7 @@ class Progress:
                 "completed_keys": list(self.completed_keys),
                 "in_progress": {
                     path: list(keys) for path, keys in self.in_progress.items()
+                    if keys
                 },
             }
         )
