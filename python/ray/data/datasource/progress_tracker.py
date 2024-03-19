@@ -19,7 +19,7 @@ class Progress:
 
     @property
     def skip_files(self) -> set[str]:
-        return self.completed_paths.union(self.in_progress_paths)
+        return self.completed_paths - self.in_progress_paths
 
     def to_json(self) -> str:
         return json.dumps(
