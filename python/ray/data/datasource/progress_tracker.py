@@ -88,7 +88,7 @@ class Progress:
         )
 
 
-@ray.remote(concurrency_groups={"read": 10_000, "write": 1})
+@ray.remote
 class ProgressTracker:
     def __init__(self, save_path: str, save_interval: int = 1_000):
         self.save_path = save_path
@@ -115,15 +115,12 @@ class ProgressTracker:
         }
         signal.signal(signal.SIGTERM, self._sigkill_handler)
 
-    @ray.method(concurrency_group="read")
     def get_initial_progress(self) -> Progress:
         return self.initial_progress
 
-    @ray.method(concurrency_group="read")
     def get_pending_queue(self) -> Queue:
         return self.pending_queue
 
-    @ray.method(concurrency_group="read")
     def get_completed_queue(self) -> Queue:
         return self.completed_queue
 
@@ -134,9 +131,7 @@ class ProgressTracker:
         num_pending = self.pending_queue.size()
 
         # flush the queues
-        completed_keys: list[Key] = self.completed_queue.get_nowait_batch(
-            num_completed
-        )
+        completed_keys: list[Key] = self.completed_queue.get_nowait_batch(num_completed)
         pending_path_and_keys: list[
             tuple[Path, Key]
         ] = self.pending_queue.get_nowait_batch(num_pending)
@@ -160,7 +155,6 @@ class ProgressTracker:
                     self.progress.pending[path].remove(key)
                     break
 
-    @ray.method(concurrency_group="write")
     def write(self):
         try:
             import fsspec
