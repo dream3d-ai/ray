@@ -343,7 +343,7 @@ class WebDatasetDatasource(FileBasedDatasource):
         if progress_path and not progress_path.endswith(".progress"):
             raise ValueError("Progress path must end with .progress")
 
-        self.progress_tracker = None
+        self.progress_tracker, self.progress, self.pending_queue = None, None, None
         if progress_path:
             self.progress_tracker = ProgressTracker.remote(
                 progress_path, save_interval=progress_save_interval
@@ -352,6 +352,16 @@ class WebDatasetDatasource(FileBasedDatasource):
 
             logger.warning(
                 "Progress tracking is enabled. This only works with write_webdataset as a sink."
+            )
+
+            self.progress, self.pending_queue = ray.get(
+                [
+                    self.progress_tracker.get_initial_progress.remote(),
+                    self.progress_tracker.get_pending_queue.remote(),
+                ]
+            )
+            logger.debug(
+                f"Found {len(self.progress.skip_keys)} completed keys across {len(self.progress.skip_files)} files."
             )
 
     def _read_stream(self, stream: "pyarrow.NativeFile", path: str):
@@ -374,31 +384,19 @@ class WebDatasetDatasource(FileBasedDatasource):
         """
         import pandas as pd
 
-        progress, pending_queue = None, None
-        if self.progress_tracker is not None:
-            progress, pending_queue = ray.get(
-                [
-                    self.progress_tracker.get_initial_progress.remote(),
-                    self.progress_tracker.get_pending_queue.remote(),
-                ]
-            )
-            logger.debug(
-                f"Found {len(progress.skip_keys)} completed keys across {len(progress.skip_files)} files."
-            )
-
         files = _tar_file_iterator(
             stream,
             fileselect=self.fileselect,
             filerename=self.filerename,
             verbose_open=self.verbose_open,
-            skip_files=progress.skip_files if progress else None,
+            skip_files=self.progress.skip_files if self.progress else None,
         )
         samples = _group_by_keys(files, meta=dict(__url__=path), suffixes=self.suffixes)
 
         keys = []
         for sample in samples:
-            if progress is not None:
-                if sample["__key__"] in progress.skip_keys:
+            if self.progress is not None:
+                if sample["__key__"] in self.progress.skip_keys:
                     continue
 
                 keys.append(sample["__key__"])
@@ -407,11 +405,11 @@ class WebDatasetDatasource(FileBasedDatasource):
                 sample = _apply_list(self.decoder, sample, default=_default_decoder)
             yield pd.DataFrame({k: [v] for k, v in sample.items()})
 
-        if pending_queue is not None:
+        if self.pending_queue is not None:
             sleep = 1
             while True:
                 try:
-                    pending_queue.put_nowait_batch([(path, key) for key in keys])
+                    self.pending_queue.put_nowait_batch([(path, key) for key in keys])
                     break
                 except Full:
                     logger.debug(f"Pending queue is full, retrying in {sleep} seconds.")
