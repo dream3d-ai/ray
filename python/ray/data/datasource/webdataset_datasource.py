@@ -6,6 +6,7 @@ import io
 import logging
 import re
 import tarfile
+import time
 from functools import partial
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
 
@@ -17,6 +18,7 @@ from ray.data.datasource.progress_tracker import (
     ProgressTracker,
 )
 from ray.util.annotations import PublicAPI
+from ray.util.queue import Full
 
 if TYPE_CHECKING:
     import pyarrow
@@ -327,6 +329,7 @@ class WebDatasetDatasource(FileBasedDatasource):
         suffixes: Optional[Union[bool, callable, list]] = None,
         verbose_open: bool = False,
         progress_path: str | None = None,
+        progress_concurrency: int = 1000,
         **file_based_datasource_kwargs,
     ):
         super().__init__(paths, **file_based_datasource_kwargs)
@@ -367,11 +370,15 @@ class WebDatasetDatasource(FileBasedDatasource):
         """
         import pandas as pd
 
-        progress = None
+        progress, pending_queue = None, None
         if self.progress_tracker is not None:
-            progress = ray.get(self.progress_tracker.get_initial_progress.remote())
-
-            logger.info(
+            progress, pending_queue = ray.get(
+                [
+                    self.progress_tracker.get_initial_progress.remote(),
+                    self.progress_tracker.get_pending_queue.remote(),
+                ]
+            )
+            logger.debug(
                 f"Found {len(progress.completed_keys)} completed keys across {len(progress.completed_paths)} files."
             )
 
@@ -384,22 +391,25 @@ class WebDatasetDatasource(FileBasedDatasource):
         )
         samples = _group_by_keys(files, meta=dict(__url__=path), suffixes=self.suffixes)
 
+        keys = []
         for sample in samples:
-            if progress is not None and self.progress_tracker is not None:
-                ray.get(
-                    self.progress_tracker.update_in_progress.remote(
-                        [(sample["__key__"], path)]
-                    )
-                )
-
+            if progress is not None:
                 if sample["__key__"] in progress.completed_keys:
-                    ray.get(
-                        self.progress_tracker.update_completed.remote(
-                            [sample["__key__"]]
-                        )
-                    )
                     continue
+
+                keys.append(sample["__key__"])
 
             if self.decoder is not None:
                 sample = _apply_list(self.decoder, sample, default=_default_decoder)
             yield pd.DataFrame({k: [v] for k, v in sample.items()})
+
+        if pending_queue is not None:
+            sleep = 1
+            while True:
+                try:
+                    pending_queue.put_nowait_batch([(path, key) for key in keys])
+                    break
+                except Full:
+                    logger.debug(f"Pending queue is full, retrying in {sleep} seconds.")
+                    time.sleep(sleep)
+                    sleep *= 2
