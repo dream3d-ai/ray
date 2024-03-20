@@ -70,7 +70,7 @@ class Progress:
         )
 
 
-@ray.remote(concurrency_groups={"get": 1000, "push": 1000, "write": 1})
+@ray.remote(concurrency_groups={"read": 10_000, "write": 1})
 class ProgressTracker:
     def __init__(self, save_path: str, save_interval: int = 1_000):
         self.save_path = save_path
@@ -97,15 +97,15 @@ class ProgressTracker:
         }
         signal.signal(signal.SIGTERM, self._sigkill_handler)
 
-    @ray.method(concurrency_group="get")
+    @ray.method(concurrency_group="read")
     async def get_initial_progress(self) -> Progress:
         return self.initial_progress
 
-    @ray.method(concurrency_group="push")
+    @ray.method(concurrency_group="read")
     async def get_pending_queue(self) -> Queue:
         return self.pending_queue
 
-    @ray.method(concurrency_group="push")
+    @ray.method(concurrency_group="read")
     async def get_completed_queue(self) -> Queue:
         return self.completed_queue
 
