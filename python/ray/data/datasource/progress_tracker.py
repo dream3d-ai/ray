@@ -116,30 +116,30 @@ class ProgressTracker:
         signal.signal(signal.SIGTERM, self._sigkill_handler)
 
     @ray.method(concurrency_group="read")
-    async def get_initial_progress(self) -> Progress:
+    def get_initial_progress(self) -> Progress:
         return self.initial_progress
 
     @ray.method(concurrency_group="read")
-    async def get_pending_queue(self) -> Queue:
+    def get_pending_queue(self) -> Queue:
         return self.pending_queue
 
     @ray.method(concurrency_group="read")
-    async def get_completed_queue(self) -> Queue:
+    def get_completed_queue(self) -> Queue:
         return self.completed_queue
 
-    async def _flush(self):
+    def _flush(self):
         logger.debug("Syncing progress tracker")
 
         num_completed = self.completed_queue.size()
         num_pending = self.pending_queue.size()
 
         # flush the queues
-        completed_keys: list[Key] = await self.completed_queue.get_nowait_batch_async(
+        completed_keys: list[Key] = self.completed_queue.get_nowait_batch(
             num_completed
         )
         pending_path_and_keys: list[
             tuple[Path, Key]
-        ] = await self.pending_queue.get_nowait_batch_async(num_pending)
+        ] = self.pending_queue.get_nowait_batch(num_pending)
 
         pending: dict[Path, set[Key]] = {}
         for path, key in pending_path_and_keys:
@@ -161,13 +161,13 @@ class ProgressTracker:
                     break
 
     @ray.method(concurrency_group="write")
-    async def write(self):
+    def write(self):
         try:
             import fsspec
         except ImportError:
             raise ImportError("Please install fsspec")
 
-        await self._flush()
+        self._flush()
 
         logger.debug(f"Writing progress tracker to {self.save_path}")
         with fsspec.open(self.save_path, "wb", compression="gzip") as f:
@@ -192,7 +192,7 @@ class ProgressTracker:
         return progress
 
     def shutdown(self):
-        asyncio.run(self.write())
+        self.write()
 
     def __del__(self):
         self.shutdown()
