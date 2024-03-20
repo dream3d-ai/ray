@@ -18,6 +18,24 @@ Key = str
 Path = str
 
 
+@ray.remote(concurrency_groups={"read": 100_000, "write": 1})
+class MutexLock:
+    def __init__(self):
+        self.lock = False
+
+    @ray.method(concurrency_group="write")
+    def acquire(self):
+        self.lock = True
+
+    @ray.method(concurrency_group="write")
+    def release(self):
+        self.lock = False
+
+    @ray.method(concurrency_group="read")
+    def read(self):
+        return self.lock
+
+
 @dataclass
 class Progress:
     pending: dict[Path, set[Key]] = field(
@@ -113,6 +131,7 @@ class ProgressTracker:
         logger.debug("Syncing progress tracker")
 
         num_completed = self.completed_queue.size()
+        num_pending = self.pending_queue.size()
 
         # flush the queues
         completed_keys: list[Key] = await self.completed_queue.get_nowait_batch_async(
@@ -120,7 +139,7 @@ class ProgressTracker:
         )
         pending_path_and_keys: list[
             tuple[Path, Key]
-        ] = await self.pending_queue.get_nowait_batch_async(num_completed)
+        ] = await self.pending_queue.get_nowait_batch_async(num_pending)
 
         pending: dict[Path, set[Key]] = {}
         for path, key in pending_path_and_keys:

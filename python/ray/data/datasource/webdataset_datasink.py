@@ -51,6 +51,8 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
                 self.progress_tracker.get_completed_queue.remote()
             )
 
+            logger.debug("Got completed queue from progress tracker.")
+
     def write_block_to_file(self, block: BlockAccessor, file: "pyarrow.NativeFile"):
         stream = tarfile.open(fileobj=file, mode="w|")
         samples = _make_iterable(block)

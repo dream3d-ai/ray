@@ -354,12 +354,13 @@ class WebDatasetDatasource(FileBasedDatasource):
                 "Progress tracking is enabled. This only works with write_webdataset as a sink."
             )
 
-            self.progress, self.pending_queue = ray.get(
-                [
-                    self.progress_tracker.get_initial_progress.remote(),
-                    self.progress_tracker.get_pending_queue.remote(),
-                ]
+            self.pending_queue = ray.get(
+                self.progress_tracker.get_pending_queue.remote()
             )
+            logger.debug("Got pending queue from progress tracker.")
+
+            self.progress = ray.get(self.progress_tracker.get_initial_progress.remote())
+
             logger.debug(
                 f"Found {len(self.progress.skip_keys)} completed keys across {len(self.progress.skip_files)} files."
             )
