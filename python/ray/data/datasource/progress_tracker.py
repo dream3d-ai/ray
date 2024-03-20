@@ -49,9 +49,9 @@ class Progress:
         return cls(
             completed_paths=set(raw_data["completed_paths"]),
             completed_keys=set(raw_data["completed_keys"]),
-            in_progress={
-                path: set(keys) for path, keys in raw_data["in_progress"].items()
-            },
+            in_progress=defaultdict(
+                set, {path: set(keys) for path, keys in raw_data["in_progress"].items()}
+            ),
             _keys_to_paths={
                 key: path
                 for path, keys in raw_data["in_progress"].items()
@@ -73,8 +73,8 @@ class Progress:
         path = self.get_path(key)
         if path:
             self.completed_paths.add(path)
+            self.in_progress[path].discard(key)
 
-        self.in_progress[path].discard(key)
         self._keys_to_paths.pop(key, None)
 
     def mark_in_progress(self, key: str, path: str):
