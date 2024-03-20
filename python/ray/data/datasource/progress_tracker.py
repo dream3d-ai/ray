@@ -72,7 +72,7 @@ class Progress:
 
 @ray.remote(concurrency_groups={"write": 1000, "sync": 1})
 class ProgressTracker:
-    def __init__(self, save_path: str, save_interval: int = 10_000):
+    def __init__(self, save_path: str, save_interval: int = 1_000):
         self.save_path = save_path
         self.initial_progress = self.load()
 
@@ -80,22 +80,10 @@ class ProgressTracker:
         self.pending_queue = Queue()
         self.completed_queue = Queue(maxsize=save_interval)
 
-        self.lock = False
         atexit.register(self.write)
 
         if threading.current_thread() is threading.main_thread():
             self.init_signal_handlers()
-
-    async def acquire_lock(self):
-        # Wait until you can safely write to the pending queue
-        sleep = 1
-        while self.lock:
-            logger.debug(
-                f"Waiting to acquire lock for pending queue. Sleeping for {sleep} seconds."
-            )
-            await asyncio.sleep(sleep)
-            sleep *= 2
-        return True
 
     def sigkill_handler(self, signum, frame):
         asyncio.run(self.write())
@@ -114,31 +102,28 @@ class ProgressTracker:
 
     @ray.method(concurrency_group="write")
     async def get_pending_queue(self) -> Queue:
-        # Call put_nowait_batch on this queue
-        await self.acquire_lock()
         return self.pending_queue
 
     @ray.method(concurrency_group="write")
     async def get_completed_queue(self) -> Queue:
-        # Call put on this queue, and write when it is full
-        await self.acquire_lock()
         return self.completed_queue
 
-    async def _sync(self):
+    async def _flush(self):
         logger.debug("Syncing progress tracker")
 
-        self.lock = True
-        # get everything from the completed queue
-        completed_keys: set[Key] = set()
-        while self.completed_queue.qsize() > 0:
-            key = self.completed_queue.get()
-            completed_keys.add(key)
+        num_completed = self.completed_queue.size()
 
-        # get everything from the pending queue
+        # flush the queues
+        completed_keys: list[Key] = await self.completed_queue.get_nowait_batch_async(
+            num_completed
+        )
+        pending_path_and_keys: list[
+            tuple[Path, Key]
+        ] = await self.pending_queue.get_nowait_batch_async(num_completed)
+
         pending: dict[Path, set[Key]] = {}
-        while self.pending_queue.qsize() > 0:
-            path, keys = self.pending_queue.get()
-            pending[path] |= keys
+        for path, key in pending_path_and_keys:
+            pending[path].add(key)
 
         # update pending in self.progress
         for path, keys in pending.items():
@@ -155,8 +140,6 @@ class ProgressTracker:
                     self.progress.pending[path].remove(key)
                     break
 
-        self.lock = False
-
     @ray.method(concurrency_group="sync")
     async def write(self):
         try:
@@ -164,7 +147,7 @@ class ProgressTracker:
         except ImportError:
             raise ImportError("Please install fsspec")
 
-        await self._sync()
+        await self._flush()
 
         logger.debug(f"Writing progress tracker to {self.save_path}")
         with fsspec.open(self.save_path, "wb", compression="gzip") as f:
