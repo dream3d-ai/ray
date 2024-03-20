@@ -26,8 +26,12 @@ class Progress:
     )
 
     @property
-    def skip_files(self) -> set[Key]:
+    def skip_files(self) -> set[Path]:
         return set(self.completed.keys()) - set(self.pending.keys())
+    
+    @property
+    def skip_keys(self) -> set[Key]:
+        return set().union(*self.completed.values())
 
     def to_json(self) -> str:
         return json.dumps(

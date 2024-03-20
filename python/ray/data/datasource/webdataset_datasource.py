@@ -381,7 +381,7 @@ class WebDatasetDatasource(FileBasedDatasource):
                 ]
             )
             logger.debug(
-                f"Found {len(progress.completed_keys)} completed keys across {len(progress.completed_paths)} files."
+                f"Found {len(progress.skip_keys)} completed keys across {len(progress.skip_files)} files."
             )
 
         files = _tar_file_iterator(
@@ -396,7 +396,7 @@ class WebDatasetDatasource(FileBasedDatasource):
         keys = []
         for sample in samples:
             if progress is not None:
-                if sample["__key__"] in progress.completed_keys:
+                if sample["__key__"] in progress.skip_keys:
                     continue
 
                 keys.append(sample["__key__"])
