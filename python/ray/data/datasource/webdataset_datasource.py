@@ -329,7 +329,7 @@ class WebDatasetDatasource(FileBasedDatasource):
         suffixes: Optional[Union[bool, callable, list]] = None,
         verbose_open: bool = False,
         progress_path: str | None = None,
-        progress_concurrency: int = 1000,
+        progress_save_interval: int = 10_000,
         **file_based_datasource_kwargs,
     ):
         super().__init__(paths, **file_based_datasource_kwargs)
@@ -346,9 +346,11 @@ class WebDatasetDatasource(FileBasedDatasource):
         self.progress_tracker = None
         if progress_path:
             self.progress_tracker = ProgressTracker.remote(
-                progress_path,
+                progress_path, save_interval=progress_save_interval
             )
             CACHED_PROGRESS_TRACKERS[progress_path] = self.progress_tracker
+
+            logger.warning("Progress tracking is enabled. This only works with write_webdataset as a sink.")
 
     def _read_stream(self, stream: "pyarrow.NativeFile", path: str):
         """Read and decode samples from a stream.

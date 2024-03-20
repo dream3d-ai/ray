@@ -66,13 +66,13 @@ class Progress:
 
 @ray.remote
 class ProgressTracker:
-    def __init__(self, save_path: str, save_interval: int = 100_000):
+    def __init__(self, save_path: str, save_interval: int = 10_000):
         self.save_path = save_path
         self.initial_progress = self.load()
 
         self.progress = self.initial_progress.deepcopy()
         self.pending_queue = Queue()
-        self.completed_queue = Queue(max_size=save_interval)
+        self.completed_queue = Queue(maxsize=save_interval)
 
         self.lock = False
 

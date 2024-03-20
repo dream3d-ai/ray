@@ -29,7 +29,6 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
         *,
         file_format: str = "tar",
         progress_path: str | None = None,
-        save_interval: int = 1,
         **file_datasink_kwargs,
     ):
         super().__init__(path, file_format="tar", **file_datasink_kwargs)
@@ -46,7 +45,6 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
                 raise Exception(f"Progress tracker at {progress_path} not found")
 
             logger.info(f"Reusing progress tracker at {progress_path}")
-            self.progress_tracker.set_save_interval.remote(save_interval)
 
     def write_block_to_file(self, block: BlockAccessor, file: "pyarrow.NativeFile"):
         stream = tarfile.open(fileobj=file, mode="w|")
