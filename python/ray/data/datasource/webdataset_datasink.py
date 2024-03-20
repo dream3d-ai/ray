@@ -35,6 +35,7 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
 
         self.encoder = encoder
         self.progress_tracker = None
+        self.completed_queue = None
 
         if progress_path and not progress_path.endswith(".progress"):
             raise ValueError("Progress path must end with .progress")
@@ -45,6 +46,10 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
                 raise Exception(f"Progress tracker at {progress_path} not found")
 
             logger.info(f"Reusing progress tracker at {progress_path}")
+
+            self.completed_queue = ray.get(
+                self.progress_tracker.get_completed_queue.remote()
+            )
 
     def write_block_to_file(self, block: BlockAccessor, file: "pyarrow.NativeFile"):
         stream = tarfile.open(fileobj=file, mode="w|")
@@ -76,13 +81,10 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
                 stream.addfile(ti, io.BytesIO(v))
         stream.close()
 
-        if self.progress_tracker is not None:
-            completed_queue = ray.get(
-                self.progress_tracker.get_completed_queue.remote()
-            )
+        if self.progress_tracker is not None and self.completed_queue is not None:
             for key in completed_keys:
                 try:
-                    completed_queue.put(key)
+                    self.completed_queue.put(key)
                 except Full:
                     logger.debug("Completed queue is full, calling write.")
                     ray.get(self.progress_tracker.write.remote())
