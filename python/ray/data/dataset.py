@@ -3182,7 +3182,6 @@ class Dataset:
         ray_remote_args: Dict[str, Any] = None,
         encoder: Optional[Union[bool, str, callable, list]] = True,
         progress_path: str | None = None,
-        save_interval: int = 1,
     ) -> None:
         """Writes the dataset to `WebDataset <https://webdataset.github.io/webdataset/>`_ files.
 
@@ -3239,7 +3238,6 @@ class Dataset:
             block_path_provider=block_path_provider,
             dataset_uuid=self._uuid,
             progress_path=progress_path,
-            save_interval=save_interval,
         )
         self.write_datasink(datasink, ray_remote_args=ray_remote_args)
 

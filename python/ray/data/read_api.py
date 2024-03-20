@@ -1608,6 +1608,7 @@ def read_webdataset(
     include_paths: bool = False,
     file_extensions: Optional[List[str]] = None,
     progress_path: str | None = None,
+    progress_save_interval: int = 10_000,
 ) -> Dataset:
     """Create a :class:`~ray.data.Dataset` from
     `WebDataset <https://webdataset.github.io/webdataset/>`_ files.
@@ -1667,6 +1668,7 @@ def read_webdataset(
         include_paths=include_paths,
         file_extensions=file_extensions,
         progress_path=progress_path,
+        progress_save_interval=progress_save_interval,
     )
     return read_datasource(datasource, parallelism=parallelism)
 
