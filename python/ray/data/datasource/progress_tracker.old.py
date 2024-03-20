@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 CACHED_PROGRESS_TRACKERS = {}
 
 
-
 @dataclass
 class Progress:
     pending: dict[str, set[str]] = field(

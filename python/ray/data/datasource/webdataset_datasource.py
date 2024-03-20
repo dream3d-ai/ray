@@ -350,7 +350,9 @@ class WebDatasetDatasource(FileBasedDatasource):
             )
             CACHED_PROGRESS_TRACKERS[progress_path] = self.progress_tracker
 
-            logger.warning("Progress tracking is enabled. This only works with write_webdataset as a sink.")
+            logger.warning(
+                "Progress tracking is enabled. This only works with write_webdataset as a sink."
+            )
 
     def _read_stream(self, stream: "pyarrow.NativeFile", path: str):
         """Read and decode samples from a stream.

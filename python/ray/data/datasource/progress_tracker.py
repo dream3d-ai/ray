@@ -3,6 +3,7 @@ import atexit
 import json
 import logging
 import signal
+import threading
 from collections import defaultdict
 from dataclasses import dataclass, field
 
@@ -29,7 +30,7 @@ class Progress:
     @property
     def skip_files(self) -> set[Path]:
         return set(self.completed.keys()) - set(self.pending.keys())
-    
+
     @property
     def skip_keys(self) -> set[Key]:
         return set().union(*self.completed.values())
@@ -81,13 +82,17 @@ class ProgressTracker:
 
         self.lock = False
         atexit.register(self.write)
-        self.init_signal_handlers()
-    
+
+        if threading.current_thread() is threading.main_thread():
+            self.init_signal_handlers()
+
     async def acquire_lock(self):
         # Wait until you can safely write to the pending queue
         sleep = 1
         while self.lock:
-            logger.debug(f"Waiting to acquire lock for pending queue. Sleeping for {sleep} seconds.")
+            logger.debug(
+                f"Waiting to acquire lock for pending queue. Sleeping for {sleep} seconds."
+            )
             await asyncio.sleep(sleep)
             sleep *= 2
         return True
@@ -149,7 +154,7 @@ class ProgressTracker:
                     self.progress.completed[path].add(key)
                     self.progress.pending[path].remove(key)
                     break
-        
+
         self.lock = False
 
     @ray.method(concurrency_group="sync")
@@ -182,9 +187,9 @@ class ProgressTracker:
             progress = Progress()
 
         return progress
-    
+
     def shutdown(self):
         asyncio.run(self.write())
-    
+
     def __del__(self):
         self.shutdown()
