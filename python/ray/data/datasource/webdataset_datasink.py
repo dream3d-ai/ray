@@ -16,6 +16,7 @@ from ray.data.datasource.webdataset_datasource import (
     _default_encoder,
     _make_iterable,
 )
+from ray.util.queue import Full
 
 logger = logging.getLogger(__name__)
 
@@ -78,4 +79,11 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
         stream.close()
 
         if self.progress_tracker is not None:
-            ray.get(self.progress_tracker.update_completed.remote(completed_keys))
+            completed_queue = ray.get(
+                self.progress_tracker.get_completed_queue.remote()
+            )
+            for key in completed_keys:
+                try:
+                    completed_queue.put(key)
+                except Full:
+                    ray.get(self.progress_tracker.write.remote())
