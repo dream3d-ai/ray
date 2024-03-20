@@ -182,3 +182,9 @@ class ProgressTracker:
             progress = Progress()
 
         return progress
+    
+    def shutdown(self):
+        asyncio.run(self.write())
+    
+    def __del__(self):
+        self.shutdown()
