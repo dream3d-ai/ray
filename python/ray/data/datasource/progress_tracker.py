@@ -70,7 +70,7 @@ class Progress:
         )
 
 
-@ray.remote(concurrency_groups={"write": 1000, "sync": 1})
+@ray.remote(concurrency_groups={"get": 1000, "push": 1000, "write": 1})
 class ProgressTracker:
     def __init__(self, save_path: str, save_interval: int = 1_000):
         self.save_path = save_path
@@ -83,28 +83,29 @@ class ProgressTracker:
         atexit.register(self.write)
 
         if threading.current_thread() is threading.main_thread():
-            self.init_signal_handlers()
+            self._init_signal_handlers()
 
-    def sigkill_handler(self, signum, frame):
+    def _sigkill_handler(self, signum, frame):
         asyncio.run(self.write())
 
         if self.original_handlers.get(signum):
             self.original_handlers[signum](signum, frame)
 
-    def init_signal_handlers(self):
+    def _init_signal_handlers(self):
         self.original_handlers = {
             signal.SIGTERM: signal.getsignal(signal.SIGTERM),
         }
-        signal.signal(signal.SIGTERM, self.sigkill_handler)
+        signal.signal(signal.SIGTERM, self._sigkill_handler)
 
-    def get_initial_progress(self) -> Progress:
+    @ray.method(concurrency_group="get")
+    async def get_initial_progress(self) -> Progress:
         return self.initial_progress
 
-    @ray.method(concurrency_group="write")
+    @ray.method(concurrency_group="push")
     async def get_pending_queue(self) -> Queue:
         return self.pending_queue
 
-    @ray.method(concurrency_group="write")
+    @ray.method(concurrency_group="push")
     async def get_completed_queue(self) -> Queue:
         return self.completed_queue
 
@@ -140,7 +141,7 @@ class ProgressTracker:
                     self.progress.pending[path].remove(key)
                     break
 
-    @ray.method(concurrency_group="sync")
+    @ray.method(concurrency_group="write")
     async def write(self):
         try:
             import fsspec
