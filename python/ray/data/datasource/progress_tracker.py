@@ -12,7 +12,6 @@ from ray.util.queue import Queue
 
 logger = logging.getLogger(__name__)
 
-CACHED_PROGRESS_TRACKERS = {}
 
 Key = str
 Path = str
@@ -88,7 +87,7 @@ class Progress:
         )
 
 
-@ray.remote
+@ray.remote(concurrency_groups={"read": 10_000, "write": 1})
 class ProgressTracker:
     def __init__(self, save_path: str, save_interval: int = 1_000):
         self.save_path = save_path
@@ -115,12 +114,15 @@ class ProgressTracker:
         }
         signal.signal(signal.SIGTERM, self._sigkill_handler)
 
+    @ray.method(concurrency_group="read")
     def get_initial_progress(self) -> Progress:
         return self.initial_progress
 
+    @ray.method(concurrency_group="read")
     def get_pending_queue(self) -> Queue:
         return self.pending_queue
 
+    @ray.method(concurrency_group="read")
     def get_completed_queue(self) -> Queue:
         return self.completed_queue
 
@@ -155,6 +157,7 @@ class ProgressTracker:
                     self.progress.pending[path].remove(key)
                     break
 
+    @ray.method(concurrency_group="write")
     def write(self):
         try:
             import fsspec
