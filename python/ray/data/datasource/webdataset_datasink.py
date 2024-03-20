@@ -84,4 +84,5 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
                 try:
                     completed_queue.put(key)
                 except Full:
+                    logger.debug("Completed queue is full, calling write.")
                     ray.get(self.progress_tracker.write.remote())
