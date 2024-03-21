@@ -165,6 +165,8 @@ class ProgressTracker:
         except FileNotFoundError:
             logger.info(f"Creating new progress file at {self.save_path}")
             progress = Progress()
+            with fsspec.open(self.save_path, "wb", compression="gzip") as f:
+                f.write(progress.to_json().encode("utf-8"))
 
         return progress
 
