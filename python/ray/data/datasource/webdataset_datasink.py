@@ -10,6 +10,7 @@ import pyarrow
 import ray
 from ray.data.block import BlockAccessor
 from ray.data.datasource.file_datasink import BlockBasedFileDatasink
+from ray.data.datasource.progress_tracker import CACHED_PROGRESS_TRACKERS
 from ray.data.datasource.webdataset_datasource import (
     _apply_list,
     _default_encoder,
@@ -40,7 +41,7 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
             raise ValueError("Progress path must end with .progress")
 
         if progress_path:
-            self.progress_tracker = ray.get_actor(f"ProgressTracker:{progress_path}")
+            self.progress_tracker = CACHED_PROGRESS_TRACKERS.get(progress_path)
             if self.progress_tracker is None:
                 raise Exception(f"Progress tracker at {progress_path} not found")
 
@@ -50,6 +51,7 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
                 self.progress_tracker.get_completed_queue.remote()
             )
             logger.debug("Got completed queue from progress tracker.")
+            
 
     def write_block_to_file(self, block: BlockAccessor, file: "pyarrow.NativeFile"):
         stream = tarfile.open(fileobj=file, mode="w|")

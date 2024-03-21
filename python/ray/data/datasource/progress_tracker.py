@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 Key = str
 Path = str
 
+CACHED_PROGRESS_TRACKERS = {}
 
 @ray.remote(concurrency_groups={"read": 100_000, "write": 1})
 class MutexLock:
@@ -87,7 +88,7 @@ class Progress:
         )
 
 
-@ray.remote(concurrency_groups={"read": 10_000, "write": 1})
+@ray.remote
 class ProgressTracker:
     def __init__(self, save_path: str, save_interval: int = 1_000):
         self.save_path = save_path
@@ -114,15 +115,12 @@ class ProgressTracker:
         }
         signal.signal(signal.SIGTERM, self._sigkill_handler)
 
-    @ray.method(concurrency_group="read")
     def get_initial_progress(self) -> Progress:
         return self.initial_progress
 
-    @ray.method(concurrency_group="read")
     def get_pending_queue(self) -> Queue:
         return self.pending_queue
 
-    @ray.method(concurrency_group="read")
     def get_completed_queue(self) -> Queue:
         return self.completed_queue
 
@@ -157,7 +155,6 @@ class ProgressTracker:
                     self.progress.pending[path].remove(key)
                     break
 
-    @ray.method(concurrency_group="write")
     def write(self):
         try:
             import fsspec
@@ -183,7 +180,7 @@ class ProgressTracker:
                 progress = Progress.load(f.read())
             logger.info(f"Loading progress from {self.save_path}")
         except FileNotFoundError:
-            logger.info(f"Creating new progress tracker at {self.save_path}")
+            logger.info(f"Creating new progress file at {self.save_path}")
             progress = Progress()
 
         return progress

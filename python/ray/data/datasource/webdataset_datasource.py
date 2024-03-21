@@ -14,6 +14,7 @@ import ray
 from ray.data.block import BlockAccessor
 from ray.data.datasource.file_based_datasource import FileBasedDatasource
 from ray.data.datasource.progress_tracker import (
+    CACHED_PROGRESS_TRACKERS,
     ProgressTracker,
 )
 from ray.util.annotations import PublicAPI
@@ -347,6 +348,7 @@ class WebDatasetDatasource(FileBasedDatasource):
             self.progress_tracker = ProgressTracker.options(name=f"ProgressTracker:{progress_path}").remote(
                 progress_path, save_interval=progress_save_interval
             )
+            CACHED_PROGRESS_TRACKERS[progress_path] = self.progress_tracker
 
             self.pending_queue = ray.get(
                 self.progress_tracker.get_pending_queue.remote()
@@ -410,4 +412,3 @@ class WebDatasetDatasource(FileBasedDatasource):
                     logger.debug(f"Pending queue is full, retrying in {sleep} seconds.")
                     time.sleep(sleep)
                     sleep *= 2
-                print("HERE 6")
