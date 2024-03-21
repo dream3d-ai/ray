@@ -18,23 +18,6 @@ Path = str
 
 CACHED_PROGRESS_TRACKERS = {}
 
-@ray.remote(concurrency_groups={"read": 100_000, "write": 1})
-class MutexLock:
-    def __init__(self):
-        self.lock = False
-
-    @ray.method(concurrency_group="write")
-    def acquire(self):
-        self.lock = True
-
-    @ray.method(concurrency_group="write")
-    def release(self):
-        self.lock = False
-
-    @ray.method(concurrency_group="read")
-    def read(self):
-        return self.lock
-
 
 @dataclass
 class Progress:

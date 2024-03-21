@@ -345,9 +345,9 @@ class WebDatasetDatasource(FileBasedDatasource):
 
         self.progress_tracker, self.progress, self.pending_queue = None, None, None
         if progress_path:
-            self.progress_tracker = ProgressTracker.options(name=f"ProgressTracker:{progress_path}").remote(
-                progress_path, save_interval=progress_save_interval
-            )
+            self.progress_tracker = ProgressTracker.options(
+                name=f"ProgressTracker:{progress_path}"
+            ).remote(progress_path, save_interval=progress_save_interval)
             CACHED_PROGRESS_TRACKERS[progress_path] = self.progress_tracker
 
             self.pending_queue = ray.get(
