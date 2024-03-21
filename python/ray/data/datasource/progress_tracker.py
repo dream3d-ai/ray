@@ -71,7 +71,7 @@ class Progress:
         )
 
 
-@ray.remote
+@ray.remote(num_cpus=2)
 class ProgressTracker:
     def __init__(self, save_path: str, save_interval: int = 1_000):
         self.save_path = save_path
