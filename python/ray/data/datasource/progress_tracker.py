@@ -1,9 +1,6 @@
-import asyncio
 import atexit
 import json
 import logging
-import signal
-import threading
 from collections import defaultdict
 from dataclasses import dataclass, field
 
@@ -71,32 +68,18 @@ class Progress:
         )
 
 
-@ray.remote(num_cpus=2)
+@ray.remote
 class ProgressTracker:
     def __init__(self, save_path: str, save_interval: int = 1_000):
         self.save_path = save_path
-        self.initial_progress = self.load()
 
+        self.initial_progress = self.load()
         self.progress = self.initial_progress.deepcopy()
+        
         self.pending_queue = Queue()
         self.completed_queue = Queue(maxsize=save_interval)
 
         atexit.register(self.write)
-
-        if threading.current_thread() is threading.main_thread():
-            self._init_signal_handlers()
-
-    def _sigkill_handler(self, signum, frame):
-        asyncio.run(self.write())
-
-        if self.original_handlers.get(signum):
-            self.original_handlers[signum](signum, frame)
-
-    def _init_signal_handlers(self):
-        self.original_handlers = {
-            signal.SIGTERM: signal.getsignal(signal.SIGTERM),
-        }
-        signal.signal(signal.SIGTERM, self._sigkill_handler)
 
     def get_initial_progress(self) -> Progress:
         return self.initial_progress
