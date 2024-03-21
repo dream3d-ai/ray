@@ -153,6 +153,7 @@ class FileBasedDatasource(Datasource):
         shuffle: Union[Literal["files"], None] = None,
         include_paths: bool = False,
         file_extensions: Optional[List[str]] = None,
+        skip_paths: Optional[List[str]] = None,
     ):
         _check_pyarrow_version()
         self._schema = schema
@@ -162,6 +163,7 @@ class FileBasedDatasource(Datasource):
         self._partitioning = partitioning
         self._ignore_missing_paths = ignore_missing_paths
         self._include_paths = include_paths
+        self._skip_paths = skip_paths
         paths, self._filesystem = _resolve_paths_and_filesystem(paths, filesystem)
         paths, file_sizes = map(
             list,
@@ -188,6 +190,10 @@ class FileBasedDatasource(Datasource):
                 "cluster can't access your local files. To fix this issue, store "
                 "files in cloud storage or a distributed filesystem like NFS."
             )
+
+        if self._skip_paths is not None:
+            logger.get_logger().debug(f"Skipping {len(self._skip_paths)} paths.")
+            paths = [p for p in paths if p not in self._skip_paths]
 
         if self._partition_filter is not None:
             # Use partition filter to skip files which are not needed.

@@ -13,10 +13,6 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
 import ray
 from ray.data.block import BlockAccessor
 from ray.data.datasource.file_based_datasource import FileBasedDatasource
-from ray.data.datasource.progress_tracker import (
-    CACHED_PROGRESS_TRACKERS,
-    ProgressTracker,
-)
 from ray.util.annotations import PublicAPI
 from ray.util.queue import Full
 
@@ -111,7 +107,6 @@ def _tar_file_iterator(
     fileselect: Optional[Union[bool, callable, list]] = None,
     filerename: Optional[Union[bool, callable, list]] = None,
     verbose_open: bool = False,
-    skip_files: Optional[set[str]] = None,
     meta: dict = None,
 ):
     """Iterate over tar file, yielding filename, content pairs for the given tar stream.
@@ -129,9 +124,6 @@ def _tar_file_iterator(
     for tarinfo in stream:
         fname = tarinfo.name
         if not tarinfo.isreg() or fname is None:
-            continue
-        if skip_files and fname in skip_files:
-            logger.debug(f"Skipping {fname}")
             continue
         data = stream.extractfile(tarinfo).read()
         fname = _apply_list(filerename, fname)
@@ -332,7 +324,10 @@ class WebDatasetDatasource(FileBasedDatasource):
         progress_save_interval: int = 10_000,
         **file_based_datasource_kwargs,
     ):
-        super().__init__(paths, **file_based_datasource_kwargs)
+        from ray.data.datasource.progress_tracker import (
+            CACHED_PROGRESS_TRACKERS,
+            ProgressTracker,
+        )
 
         self.decoder = decoder
         self.fileselect = fileselect
@@ -340,12 +335,19 @@ class WebDatasetDatasource(FileBasedDatasource):
         self.suffixes = suffixes
         self.verbose_open = verbose_open
 
+        # Progress Tracking
+        self.progress_tracker = None
+        self.progress = None
+        self.pending_queue = None
+        self.skip_paths = None
+
         if progress_path and not progress_path.endswith(".progress"):
             raise ValueError("Progress path must end with .progress")
 
-        self.progress_tracker, self.progress, self.pending_queue = None, None, None
         if progress_path:
-            self.progress_tracker = ProgressTracker.remote(progress_path, save_interval=progress_save_interval)
+            self.progress_tracker = ProgressTracker.remote(
+                progress_path, save_interval=progress_save_interval
+            )
             CACHED_PROGRESS_TRACKERS[progress_path] = self.progress_tracker
 
             self.pending_queue = ray.get(
@@ -354,10 +356,15 @@ class WebDatasetDatasource(FileBasedDatasource):
             logger.debug("Got pending queue from progress tracker.")
 
             self.progress = ray.get(self.progress_tracker.get_initial_progress.remote())
+            self.skip_paths = self.progress.skip_files
 
             logger.debug(
-                f"Found {len(self.progress.skip_keys)} completed keys across {len(self.progress.skip_files)} files."
+                f"Found {len(self.progress.skip_keys)} completed keys across {len(list(self.progress.completed.keys()))} files."
             )
+
+        super().__init__(
+            paths, skip_paths=self.skip_paths, **file_based_datasource_kwargs
+        )
 
     def _read_stream(self, stream: "pyarrow.NativeFile", path: str):
         """Read and decode samples from a stream.
@@ -384,7 +391,6 @@ class WebDatasetDatasource(FileBasedDatasource):
             fileselect=self.fileselect,
             filerename=self.filerename,
             verbose_open=self.verbose_open,
-            skip_files=self.progress.skip_files if self.progress else None,
         )
         samples = _group_by_keys(files, meta=dict(__url__=path), suffixes=self.suffixes)
 

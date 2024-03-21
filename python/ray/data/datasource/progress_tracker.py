@@ -75,7 +75,7 @@ class ProgressTracker:
 
         self.initial_progress = self.load()
         self.progress = self.initial_progress.deepcopy()
-        
+
         self.pending_queue = Queue()
         self.completed_queue = Queue(maxsize=save_interval)
 

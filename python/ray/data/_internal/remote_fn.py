@@ -16,6 +16,8 @@ def cached_remote_fn(fn: Any, **ray_remote_args) -> Any:
     and should be set with ``options`` instead:
     ``cached_remote_fn(fn, **static_args).options(**dynamic_args)``.
     """
+    from ray.data.block import CallableClass
+
     if fn not in CACHED_FUNCTIONS:
         default_ray_remote_args = {
             # Use the default scheduling strategy for all tasks so that we will
@@ -23,8 +25,11 @@ def cached_remote_fn(fn: Any, **ray_remote_args) -> Any:
             # The caller of this function may override the scheduling strategy
             # as needed.
             "scheduling_strategy": "DEFAULT",
-            "max_retries": -1,
         }
+        if not isinstance(fn, CallableClass):
+            default_ray_remote_args["max_retries"] = -1
+        else:
+            default_ray_remote_args["max_restarts"] = -1
         CACHED_FUNCTIONS[fn] = ray.remote(
             **{**default_ray_remote_args, **ray_remote_args}
         )(fn)
