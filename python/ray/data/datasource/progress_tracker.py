@@ -4,7 +4,7 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-import ray
+from ray.data._internal.remote_fn import cached_remote_fn
 from ray.util.queue import Queue
 
 logger = logging.getLogger(__name__)
@@ -68,7 +68,7 @@ class Progress:
         )
 
 
-@ray.remote
+@cached_remote_fn
 class ProgressTracker:
     def __init__(self, save_path: str, save_interval: int = 1_000):
         self.save_path = save_path
