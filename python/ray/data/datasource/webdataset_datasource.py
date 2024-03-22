@@ -336,7 +336,6 @@ class WebDatasetDatasource(FileBasedDatasource):
         self.verbose_open = verbose_open
 
         # Progress Tracking
-        self.progress_tracker = None
         self.progress = None
         self.pending_queue = None
         self.skip_paths = None
@@ -346,20 +345,16 @@ class WebDatasetDatasource(FileBasedDatasource):
 
         if progress_path:
             try:
-                self.progress_tracker = ray.get_actor(
-                    f"ProgressTracker:{progress_path}"
-                )
+                progress_tracker = ray.get_actor(f"ProgressTracker:{progress_path}")
             except ValueError:
-                self.progress_tracker = ProgressTracker.options(
+                progress_tracker = ProgressTracker.options(
                     name=f"ProgressTracker:{progress_path}"
                 ).remote(progress_path, save_interval=progress_save_interval)
 
-            self.pending_queue = ray.get(
-                self.progress_tracker.get_pending_queue.remote()
-            )
+            self.pending_queue = ray.get(progress_tracker.get_pending_queue.remote())
             logger.debug("Got pending queue from progress tracker.")
 
-            self.progress = ray.get(self.progress_tracker.get_initial_progress.remote())
+            self.progress = ray.get(progress_tracker.get_initial_progress.remote())
             self.skip_paths = self.progress.skip_files
 
             logger.debug(
