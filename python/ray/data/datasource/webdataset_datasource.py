@@ -6,7 +6,6 @@ import io
 import logging
 import re
 import tarfile
-import time
 from functools import partial
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
 
@@ -14,7 +13,6 @@ import ray
 from ray.data.block import BlockAccessor
 from ray.data.datasource.file_based_datasource import FileBasedDatasource
 from ray.util.annotations import PublicAPI
-from ray.util.queue import Full
 
 if TYPE_CHECKING:
     import pyarrow
@@ -322,9 +320,6 @@ class WebDatasetDatasource(FileBasedDatasource):
         verbose_open: bool = False,
         progress_path: str | None = None,
         progress_save_interval: int = 10_000,
-        progress_queue_actor_options: Optional[dict] = {
-            "max_concurrency": 1000,
-        },
         **file_based_datasource_kwargs,
     ):
         from ray.data.datasource.progress_tracker import ProgressTracker
@@ -337,7 +332,7 @@ class WebDatasetDatasource(FileBasedDatasource):
 
         # Progress Tracking
         self.progress = None
-        self.pending_queue = None
+        self.progress_tracker = None
         self.skip_paths = None
 
         if progress_path and not progress_path.endswith(".progress"):
@@ -345,20 +340,18 @@ class WebDatasetDatasource(FileBasedDatasource):
 
         if progress_path:
             try:
-                progress_tracker = ray.get_actor(f"ProgressTracker:{progress_path}")
+                self.progress_tracker = ray.get_actor(
+                    f"ProgressTracker:{progress_path}"
+                )
             except ValueError:
-                progress_tracker = ProgressTracker.options(
+                self.progress_tracker = ProgressTracker.options(
                     name=f"ProgressTracker:{progress_path}",
                 ).remote(
                     progress_path,
                     save_interval=progress_save_interval,
-                    queue_actor_options=progress_queue_actor_options,
                 )
 
-            self.pending_queue = ray.get(progress_tracker.get_pending_queue.remote())
-            logger.debug("Got pending queue from progress tracker.")
-
-            self.progress = ray.get(progress_tracker.get_initial_progress.remote())
+            self.progress = ray.get(self.progress_tracker.get_initial_progress.remote())
             self.skip_paths = self.progress.skip_files
 
             logger.debug(
@@ -409,13 +402,5 @@ class WebDatasetDatasource(FileBasedDatasource):
                 sample = _apply_list(self.decoder, sample, default=_default_decoder)
             yield pd.DataFrame({k: [v] for k, v in sample.items()})
 
-        if self.pending_queue is not None:
-            sleep = 1
-            while True:
-                try:
-                    self.pending_queue.put_nowait_batch([(path, key) for key in keys])
-                    break
-                except Full:
-                    logger.debug(f"Pending queue is full, retrying in {sleep} seconds.")
-                    time.sleep(sleep)
-                    sleep *= 2
+        if self.progress_tracker is not None:
+            self.progress_tracker.put_pending.remote([(path, key) for key in keys])

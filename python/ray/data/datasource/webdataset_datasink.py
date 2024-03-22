@@ -10,12 +10,12 @@ import pyarrow
 import ray
 from ray.data.block import BlockAccessor
 from ray.data.datasource.file_datasink import BlockBasedFileDatasink
+from ray.data.datasource.progress_tracker import RequiresFlush
 from ray.data.datasource.webdataset_datasource import (
     _apply_list,
     _default_encoder,
     _make_iterable,
 )
-from ray.util.queue import Full
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +42,6 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
         if progress_path:
             self.progress_tracker = ray.get_actor(f"ProgressTracker:{progress_path}")
             logger.debug(f"Found progress tracker at {progress_path}")
-
-            self.completed_queue = ray.get(
-                self.progress_tracker.get_completed_queue.remote()
-            )
-            logger.debug("Got completed queue from progress tracker.")
 
     def write_block_to_file(self, block: BlockAccessor, file: "pyarrow.NativeFile"):
         stream = tarfile.open(fileobj=file, mode="w|")
@@ -79,8 +74,17 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
         stream.close()
 
         if self.progress_tracker is not None and self.completed_queue is not None:
-            try:
-                self.completed_queue.put_nowait_batch(completed_keys)
-            except Full:
-                logger.debug("Completed queue is full, calling write.")
-                ray.get(self.progress_tracker.write.remote())
+            retries = 0
+            max_retries = 5
+            while retries < max_retries:
+                try:
+                    self.completed_queue.put_nowait_batch(completed_keys)
+                    break
+                except RequiresFlush:
+                    logger.debug("Completed queue is full, calling write.")
+                    ray.get(self.progress_tracker.write.remote())
+                    retries += 1
+            if retries == max_retries:
+                raise RuntimeError(
+                    "Maximum retries reached while trying to put completed keys into the queue."
+                )

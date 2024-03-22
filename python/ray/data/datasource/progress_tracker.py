@@ -1,12 +1,13 @@
 import atexit
 import json
 import logging
+import queue
+import time
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Dict, Optional
 
+import ray
 from ray.data._internal.remote_fn import cached_remote_fn
-from ray.util.queue import Queue
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,10 @@ Key = str
 Path = str
 
 CACHED_PROGRESS_TRACKERS = {}
+
+
+class RequiresFlush(Exception):
+    pass
 
 
 @dataclass
@@ -69,22 +74,23 @@ class Progress:
         )
 
 
-@cached_remote_fn
+@cached_remote_fn(concurrency_groups={"pending": 1000, "completed": 1000, "write": 1})
 class ProgressTracker:
     def __init__(
         self,
         save_path: str,
         save_interval: int = 1_000,
-        queue_actor_options: Optional[Dict] = None,
     ):
-        self.save_path = save_path
+        if save_interval < 1:
+            raise ValueError("save_interval must be greater than 0")
 
+        self.save_path = save_path
         self.initial_progress = self.load()
         self.progress = self.initial_progress.deepcopy()
 
-        self.pending_queue = Queue(actor_options=queue_actor_options, async_=False)
-        self.completed_queue = Queue(
-            maxsize=save_interval, actor_options=queue_actor_options, async_=False
+        self.pending_queue = queue.Queue()
+        self.completed_queue = queue.Queue(
+            maxsize=save_interval,
         )
 
         atexit.register(self.write)
@@ -92,23 +98,47 @@ class ProgressTracker:
     def get_initial_progress(self) -> Progress:
         return self.initial_progress
 
-    def get_pending_queue(self) -> Queue:
-        return self.pending_queue
+    @ray.method(concurrency_group="pending")
+    def put_pending(self, items: list[tuple[Path, Key]]) -> None:
+        for item in items:
+            sleep = 1
+            path, key = item
+            while True:
+                try:
+                    self.pending_queue.put_nowait((path, key))
+                    break
+                except queue.Full:
+                    logger.debug(f"Pending queue is full, retrying in {sleep} seconds.")
+                    time.sleep(sleep)
+                    sleep *= 2
 
-    def get_completed_queue(self) -> Queue:
-        return self.completed_queue
+    @ray.method(concurrency_group="completed")
+    def put_completed(self, keys: list[Key]) -> None:
+        if (
+            self.completed_queue.maxsize > 0
+            and len(keys) + self.completed_queue.qsize() > self.completed_queue.maxsize
+        ):
+            raise RequiresFlush()
+        for key in keys:
+            self.completed_queue.put_nowait(key)
+
+    def get_pending(self) -> list[tuple[Path, Key]]:
+        return [
+            self.pending_queue.get_nowait() for _ in range(self.pending_queue.qsize())
+        ]
+
+    def get_completed(self) -> list[Key]:
+        return [
+            self.completed_queue.get_nowait()
+            for _ in range(self.completed_queue.qsize())
+        ]
 
     def _flush(self):
         logger.debug("Syncing progress tracker")
 
-        num_completed = self.completed_queue.size()
-        num_pending = self.pending_queue.size()
-
         # flush the queues
-        completed_keys: list[Key] = self.completed_queue.get_nowait_batch(num_completed)
-        pending_path_and_keys: list[
-            tuple[Path, Key]
-        ] = self.pending_queue.get_nowait_batch(num_pending)
+        completed_keys: list[Key] = self.get_completed()
+        pending_path_and_keys: list[tuple[Path, Key]] = self.get_pending()
 
         pending: dict[Path, set[Key]] = {}
         for path, key in pending_path_and_keys:
@@ -129,6 +159,7 @@ class ProgressTracker:
                     self.progress.pending[path].remove(key)
                     break
 
+    @ray.method(concurrency_group="write")
     def write(self):
         try:
             import fsspec
