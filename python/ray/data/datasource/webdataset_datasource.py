@@ -352,7 +352,7 @@ class WebDatasetDatasource(FileBasedDatasource):
                 ).remote(
                     progress_path,
                     save_interval=progress_save_interval,
-                    progress_queue_actor_options=progress_queue_actor_options,
+                    queue_actor_options=progress_queue_actor_options,
                 )
 
             self.pending_queue = ray.get(progress_tracker.get_pending_queue.remote())
