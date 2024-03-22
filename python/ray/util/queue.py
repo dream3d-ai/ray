@@ -1,4 +1,5 @@
 import asyncio
+import queue
 from typing import Optional, Any, List, Dict
 from collections.abc import Iterable
 
@@ -51,16 +52,28 @@ class Queue:
             q = Queue(actor_options={"num_cpus": 1})
     """
 
-    def __init__(self, maxsize: int = 0, actor_options: Optional[Dict] = None) -> None:
+    def __init__(
+        self,
+        maxsize: int = 0,
+        actor_options: Optional[Dict] = None,
+        async_: bool = True,
+    ) -> None:
         from ray._private.usage.usage_lib import record_library_usage
 
         record_library_usage("util.Queue")
 
         actor_options = actor_options or {}
         self.maxsize = maxsize
-        self.actor = (
-            ray.remote(_QueueActor).options(**actor_options).remote(self.maxsize)
-        )
+        if async_:
+            self.actor = (
+                ray.remote(_QueueActor).options(**actor_options).remote(self.maxsize)
+            )
+        else:
+            self.actor = (
+                ray.remote(_ThreadedQueueActor)
+                .options(**actor_options)
+                .remote(self.maxsize)
+            )
 
     def __len__(self) -> int:
         return self.size()
@@ -293,6 +306,56 @@ class _QueueActor:
         try:
             return await asyncio.wait_for(self.queue.get(), timeout)
         except asyncio.TimeoutError:
+            raise Empty
+
+    def put_nowait(self, item):
+        self.queue.put_nowait(item)
+
+    def put_nowait_batch(self, items):
+        # If maxsize is 0, queue is unbounded, so no need to check size.
+        if self.maxsize > 0 and len(items) + self.qsize() > self.maxsize:
+            raise Full(
+                f"Cannot add {len(items)} items to queue of size "
+                f"{self.qsize()} and maxsize {self.maxsize}."
+            )
+        for item in items:
+            self.queue.put_nowait(item)
+
+    def get_nowait(self):
+        return self.queue.get_nowait()
+
+    def get_nowait_batch(self, num_items):
+        if num_items > self.qsize():
+            raise Empty(
+                f"Cannot get {num_items} items from queue of size " f"{self.qsize()}."
+            )
+        return [self.queue.get_nowait() for _ in range(num_items)]
+
+
+class _ThreadedQueueActor:
+    def __init__(self, maxsize):
+        self.maxsize = maxsize
+        self.queue = queue.Queue(self.maxsize)
+
+    def qsize(self):
+        return self.queue.qsize()
+
+    def empty(self):
+        return self.queue.empty()
+
+    def full(self):
+        return self.queue.full()
+
+    def put(self, item, timeout=None):
+        try:
+            self.queue.put(item, timeout=timeout)
+        except queue.Full:
+            raise Full
+
+    def get(self, timeout=None):
+        try:
+            return await asyncio.wait_for(self.queue.get(), timeout)
+        except queue.Empty:
             raise Empty
 
     def put_nowait(self, item):

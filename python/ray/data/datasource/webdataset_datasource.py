@@ -322,12 +322,12 @@ class WebDatasetDatasource(FileBasedDatasource):
         verbose_open: bool = False,
         progress_path: str | None = None,
         progress_save_interval: int = 10_000,
+        progress_queue_actor_options: Optional[dict] = {
+            "max_concurrency": 1000,
+        },
         **file_based_datasource_kwargs,
     ):
-        from ray.data.datasource.progress_tracker import (
-            CACHED_PROGRESS_TRACKERS,
-            ProgressTracker,
-        )
+        from ray.data.datasource.progress_tracker import ProgressTracker
 
         self.decoder = decoder
         self.fileselect = fileselect
@@ -348,7 +348,8 @@ class WebDatasetDatasource(FileBasedDatasource):
                 progress_tracker = ray.get_actor(f"ProgressTracker:{progress_path}")
             except ValueError:
                 progress_tracker = ProgressTracker.options(
-                    name=f"ProgressTracker:{progress_path}"
+                    name=f"ProgressTracker:{progress_path}",
+                    progress_queue_actor_options=progress_queue_actor_options,
                 ).remote(progress_path, save_interval=progress_save_interval)
 
             self.pending_queue = ray.get(progress_tracker.get_pending_queue.remote())

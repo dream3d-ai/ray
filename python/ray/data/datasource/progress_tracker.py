@@ -3,6 +3,7 @@ import json
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
+from typing import Dict, Optional
 
 from ray.data._internal.remote_fn import cached_remote_fn
 from ray.util.queue import Queue
@@ -70,14 +71,21 @@ class Progress:
 
 @cached_remote_fn
 class ProgressTracker:
-    def __init__(self, save_path: str, save_interval: int = 1_000):
+    def __init__(
+        self,
+        save_path: str,
+        save_interval: int = 1_000,
+        queue_actor_options: Optional[Dict] = None,
+    ):
         self.save_path = save_path
 
         self.initial_progress = self.load()
         self.progress = self.initial_progress.deepcopy()
 
-        self.pending_queue = Queue()
-        self.completed_queue = Queue(maxsize=save_interval)
+        self.pending_queue = Queue(actor_options=queue_actor_options, async_=False)
+        self.completed_queue = Queue(
+            maxsize=save_interval, actor_options=queue_actor_options, async_=False
+        )
 
         atexit.register(self.write)
 
