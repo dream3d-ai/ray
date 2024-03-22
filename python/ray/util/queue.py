@@ -1,7 +1,7 @@
 import asyncio
 import queue
-from typing import Optional, Any, List, Dict
 from collections.abc import Iterable
+from typing import Any, Dict, List, Optional
 
 import ray
 from ray.util.annotations import PublicAPI
@@ -354,7 +354,7 @@ class _ThreadedQueueActor:
 
     def get(self, timeout=None):
         try:
-            return await asyncio.wait_for(self.queue.get(), timeout)
+            return self.queue.get(timeout=timeout)
         except queue.Empty:
             raise Empty
 

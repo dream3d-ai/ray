@@ -74,8 +74,7 @@ class Progress:
         )
 
 
-@cached_remote_fn(concurrency_groups={"pending": 1000, "completed": 1000, "write": 1})
-class ProgressTracker:
+class ProgressTracker_:
     def __init__(
         self,
         save_path: str,
@@ -197,3 +196,9 @@ class ProgressTracker:
 
     def __del__(self):
         self.shutdown()
+
+
+ProgressTracker = cached_remote_fn(
+    ProgressTracker_,
+    concurrency_groups={"pending": 1000, "completed": 1000, "write": 1},
+)
