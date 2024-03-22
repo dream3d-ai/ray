@@ -12,6 +12,10 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
 import ray
 from ray.data.block import BlockAccessor
 from ray.data.datasource.file_based_datasource import FileBasedDatasource
+from ray.data.datasource.progress_tracker import (
+    CACHED_PROGRESS_TRACKERS,
+    ProgressTracker,
+)
 from ray.util.annotations import PublicAPI
 
 if TYPE_CHECKING:
@@ -322,10 +326,7 @@ class WebDatasetDatasource(FileBasedDatasource):
         progress_save_interval: int = 10_000,
         **file_based_datasource_kwargs,
     ):
-        from ray.data.datasource.progress_tracker import (
-            CACHED_PROGRESS_TRACKERS,
-            ProgressTracker,
-        )
+        
 
         self.decoder = decoder
         self.fileselect = fileselect

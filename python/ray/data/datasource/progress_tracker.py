@@ -15,8 +15,6 @@ logger = logging.getLogger(__name__)
 Key = str
 Path = str
 
-CACHED_PROGRESS_TRACKERS = {}
-
 
 class RequiresFlush(Exception):
     pass
@@ -202,3 +200,6 @@ ProgressTracker = cached_remote_fn(
     ProgressTracker_,
     concurrency_groups={"pending": 1000, "completed": 1000, "write": 1},
 )
+
+
+CACHED_PROGRESS_TRACKERS: dict[str, ProgressTracker] = {}
