@@ -42,10 +42,7 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
             raise ValueError("Progress path must end with .progress")
 
         if progress_path:
-            self.progress_tracker = CACHED_PROGRESS_TRACKERS.get(progress_path)
-            if self.progress_tracker is None:
-                raise Exception(f"Progress tracker at {progress_path} not found")
-
+            self.progress_tracker = ray.get_actor(f"ProgressTracker:{progress_path}")
             logger.debug(f"Found progress tracker at {progress_path}")
 
             self.completed_queue = ray.get(
