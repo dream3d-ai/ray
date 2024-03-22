@@ -8,6 +8,7 @@ from typing import Optional, Union
 import pyarrow
 
 import ray
+from ray.data.context import DataContext
 from ray.data.block import BlockAccessor
 from ray.data.datasource.file_datasink import BlockBasedFileDatasink
 from ray.data.datasource.progress_tracker import CACHED_PROGRESS_TRACKERS, RequiresFlush
@@ -41,7 +42,10 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
             raise ValueError("Progress path must end with .progress")
 
         if progress_path:
-            self.progress_tracker = CACHED_PROGRESS_TRACKERS.get(progress_path)
+            ctx = DataContext.get_current()
+            progress_tracker_actor_name = ctx.get_config(key=progress_path)
+            self.progress_tracker = ray.get_actor(progress_tracker_actor_name)
+            
             if self.progress_tracker is None:
                 raise ValueError(
                     "Progress tracker must be initialized before the datasink."

@@ -11,9 +11,9 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
 
 import ray
 from ray.data.block import BlockAccessor
+from ray.data.context import DataContext
 from ray.data.datasource.file_based_datasource import FileBasedDatasource
 from ray.data.datasource.progress_tracker import (
-    CACHED_PROGRESS_TRACKERS,
     ProgressTracker,
 )
 from ray.util.annotations import PublicAPI
@@ -342,13 +342,10 @@ class WebDatasetDatasource(FileBasedDatasource):
 
         skip_paths = None
         if progress_path:
-            if progress_path in CACHED_PROGRESS_TRACKERS:
-                self.progress_tracker = CACHED_PROGRESS_TRACKERS[progress_path]
-            else:
-                self.progress_tracker = ProgressTracker.remote(
-                    progress_path,
-                    save_interval=progress_save_interval,
-                )
+            self.progress_tracker = ProgressTracker.options().remote(
+                progress_path,
+                save_interval=progress_save_interval,
+            )
 
             skip_paths = ray.get(
                 ray.get(self.progress_tracker.get_initial_progress.remote())
@@ -359,6 +356,10 @@ class WebDatasetDatasource(FileBasedDatasource):
             )
 
         super().__init__(paths, skip_paths=skip_paths, **file_based_datasource_kwargs)
+
+        if progress_path:
+            ctx = DataContext.get_current()
+            ctx.set_config(key=progress_path, value=self.progress_tracker)
 
     def _read_stream(self, stream: "pyarrow.NativeFile", path: str):
         """Read and decode samples from a stream.
