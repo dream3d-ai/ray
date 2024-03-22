@@ -349,8 +349,11 @@ class WebDatasetDatasource(FileBasedDatasource):
             except ValueError:
                 progress_tracker = ProgressTracker.options(
                     name=f"ProgressTracker:{progress_path}",
+                ).remote(
+                    progress_path,
+                    save_interval=progress_save_interval,
                     progress_queue_actor_options=progress_queue_actor_options,
-                ).remote(progress_path, save_interval=progress_save_interval)
+                )
 
             self.pending_queue = ray.get(progress_tracker.get_pending_queue.remote())
             logger.debug("Got pending queue from progress tracker.")
