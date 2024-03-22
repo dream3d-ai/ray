@@ -163,7 +163,6 @@ class FileBasedDatasource(Datasource):
         self._partitioning = partitioning
         self._ignore_missing_paths = ignore_missing_paths
         self._include_paths = include_paths
-        self._skip_paths = skip_paths
         paths, self._filesystem = _resolve_paths_and_filesystem(paths, filesystem)
         paths, file_sizes = map(
             list,
@@ -191,9 +190,9 @@ class FileBasedDatasource(Datasource):
                 "files in cloud storage or a distributed filesystem like NFS."
             )
 
-        if self._skip_paths is not None:
-            logger.get_logger().debug(f"Skipping {len(self._skip_paths)} paths.")
-            paths = [p for p in paths if p not in self._skip_paths]
+        if skip_paths is not None:
+            logger.get_logger().debug(f"Skipping {len(skip_paths)} paths.")
+            paths = [p for p in paths if p not in skip_paths]
 
         if self._partition_filter is not None:
             # Use partition filter to skip files which are not needed.

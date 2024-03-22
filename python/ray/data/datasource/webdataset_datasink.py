@@ -30,17 +30,22 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
         progress_path: str | None = None,
         **file_datasink_kwargs,
     ):
+        from ray.data.datasource.progress_tracker import CACHED_PROGRESS_TRACKERS
+
         super().__init__(path, file_format="tar", **file_datasink_kwargs)
 
         self.encoder = encoder
         self.progress_tracker = None
-        self.completed_queue = None
 
         if progress_path and not progress_path.endswith(".progress"):
             raise ValueError("Progress path must end with .progress")
 
         if progress_path:
-            self.progress_tracker = ray.get_actor(f"ProgressTracker:{progress_path}")
+            self.progress_tracker = CACHED_PROGRESS_TRACKERS.get(progress_path)
+            if self.progress_tracker is None:
+                raise ValueError(
+                    "Progress tracker must be initialized before the datasink."
+                )
             logger.debug(f"Found progress tracker at {progress_path}")
 
     def write_block_to_file(self, block: BlockAccessor, file: "pyarrow.NativeFile"):
@@ -73,18 +78,9 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
                 stream.addfile(ti, io.BytesIO(v))
         stream.close()
 
-        if self.progress_tracker is not None and self.completed_queue is not None:
-            retries = 0
-            max_retries = 5
-            while retries < max_retries:
-                try:
-                    self.completed_queue.put_nowait_batch(completed_keys)
-                    break
-                except RequiresFlush:
-                    logger.debug("Completed queue is full, calling write.")
-                    ray.get(self.progress_tracker.write.remote())
-                    retries += 1
-            if retries == max_retries:
-                raise RuntimeError(
-                    "Maximum retries reached while trying to put completed keys into the queue."
-                )
+        if self.progress_tracker is not None:
+            try:
+                ray.get(self.progress_tracker.put_completed(completed_keys))
+            except RequiresFlush:
+                ray.get(self.progress_tracker.write())
+                ray.get(self.progress_tracker.put_completed(completed_keys))

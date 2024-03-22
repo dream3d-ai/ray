@@ -84,8 +84,8 @@ class ProgressTracker_:
             raise ValueError("save_interval must be greater than 0")
 
         self.save_path = save_path
-        self.initial_progress = self.load()
-        self.progress = self.initial_progress.deepcopy()
+        self.progress = self.load()
+        self.initial_progress_ref = ray.put(self.progress)
 
         self.pending_queue = queue.Queue()
         self.completed_queue = queue.Queue(
@@ -94,8 +94,8 @@ class ProgressTracker_:
 
         atexit.register(self.write)
 
-    def get_initial_progress(self) -> Progress:
-        return self.initial_progress
+    def get_initial_progress(self) -> ray.ObjectRef:
+        return self.initial_progress_ref
 
     @ray.method(concurrency_group="pending")
     def put_pending(self, items: list[tuple[Path, Key]]) -> None:

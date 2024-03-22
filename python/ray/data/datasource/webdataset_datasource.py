@@ -322,7 +322,10 @@ class WebDatasetDatasource(FileBasedDatasource):
         progress_save_interval: int = 10_000,
         **file_based_datasource_kwargs,
     ):
-        from ray.data.datasource.progress_tracker import ProgressTracker
+        from ray.data.datasource.progress_tracker import (
+            CACHED_PROGRESS_TRACKERS,
+            ProgressTracker,
+        )
 
         self.decoder = decoder
         self.fileselect = fileselect
@@ -331,36 +334,30 @@ class WebDatasetDatasource(FileBasedDatasource):
         self.verbose_open = verbose_open
 
         # Progress Tracking
-        self.progress = None
         self.progress_tracker = None
-        self.skip_paths = None
 
         if progress_path and not progress_path.endswith(".progress"):
             raise ValueError("Progress path must end with .progress")
 
+        skip_paths = None
         if progress_path:
-            try:
-                self.progress_tracker = ray.get_actor(
-                    f"ProgressTracker:{progress_path}"
-                )
-            except ValueError:
-                self.progress_tracker = ProgressTracker.options(
-                    name=f"ProgressTracker:{progress_path}",
-                ).remote(
+            if progress_path in CACHED_PROGRESS_TRACKERS:
+                self.progress_tracker = CACHED_PROGRESS_TRACKERS[progress_path]
+            else:
+                self.progress_tracker = ProgressTracker.remote(
                     progress_path,
                     save_interval=progress_save_interval,
                 )
 
-            self.progress = ray.get(self.progress_tracker.get_initial_progress.remote())
-            self.skip_paths = self.progress.skip_files
+            skip_paths = ray.get(
+                ray.get(self.progress_tracker.get_initial_progress.remote())
+            ).skip_files
 
             logger.debug(
-                f"Found {len(self.progress.skip_keys)} completed keys across {len(list(self.progress.completed.keys()))} files."
+                f"Skipping {len(skip_paths)} files from progress tracker {progress_path}"
             )
 
-        super().__init__(
-            paths, skip_paths=self.skip_paths, **file_based_datasource_kwargs
-        )
+        super().__init__(paths, skip_paths=skip_paths, **file_based_datasource_kwargs)
 
     def _read_stream(self, stream: "pyarrow.NativeFile", path: str):
         """Read and decode samples from a stream.
@@ -392,10 +389,7 @@ class WebDatasetDatasource(FileBasedDatasource):
 
         keys = []
         for sample in samples:
-            if self.progress is not None:
-                if sample["__key__"] in self.progress.skip_keys:
-                    continue
-
+            if self.progress_tracker is not None:
                 keys.append(sample["__key__"])
 
             if self.decoder is not None:
