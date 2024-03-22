@@ -30,8 +30,6 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
         progress_path: str | None = None,
         **file_datasink_kwargs,
     ):
-        from ray.data.datasource.progress_tracker import CACHED_PROGRESS_TRACKERS
-
         super().__init__(path, file_format="tar", **file_datasink_kwargs)
 
         self.encoder = encoder
