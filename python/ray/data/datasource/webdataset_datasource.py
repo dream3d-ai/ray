@@ -345,10 +345,14 @@ class WebDatasetDatasource(FileBasedDatasource):
             raise ValueError("Progress path must end with .progress")
 
         if progress_path:
-            self.progress_tracker = ProgressTracker.remote(
-                progress_path, save_interval=progress_save_interval
-            )
-            CACHED_PROGRESS_TRACKERS[progress_path] = self.progress_tracker
+            if progress_path in CACHED_PROGRESS_TRACKERS:
+                self.progress_tracker = CACHED_PROGRESS_TRACKERS[progress_path]
+                logger.debug("Found progress tracker in cache.")
+            else:
+                self.progress_tracker = ProgressTracker.remote(
+                    progress_path, save_interval=progress_save_interval
+                )
+                CACHED_PROGRESS_TRACKERS[progress_path] = self.progress_tracker
 
             self.pending_queue = ray.get(
                 self.progress_tracker.get_pending_queue.remote()
