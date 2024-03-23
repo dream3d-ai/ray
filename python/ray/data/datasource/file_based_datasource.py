@@ -185,6 +185,7 @@ class FileBasedDatasource(Datasource):
         if progress_path and not progress_path.endswith(".progress"):
             raise ValueError("Progress path must end with .progress")
 
+        self.progress_tracker = None
         if progress_path:
             self.progress_tracker = ProgressTracker.remote(
                 progress_path,
