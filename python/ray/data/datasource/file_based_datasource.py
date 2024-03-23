@@ -170,6 +170,17 @@ class FileBasedDatasource(Datasource):
         self._progress_save_interval = progress_save_interval
         self._progress_index_column = progress_index_column
         paths, self._filesystem = _resolve_paths_and_filesystem(paths, filesystem)
+        paths, file_sizes = map(
+            list,
+            zip(
+                *meta_provider.expand_paths(
+                    paths,
+                    self._filesystem,
+                    partitioning,
+                    ignore_missing_paths=ignore_missing_paths,
+                )
+            ),
+        )
 
         if progress_path and not progress_path.endswith(".progress"):
             raise ValueError("Progress path must end with .progress")
@@ -188,19 +199,10 @@ class FileBasedDatasource(Datasource):
                 ray.get(self.progress_tracker.get_initial_progress.remote())
             ).skip_files
             logger.get_logger().debug(f"Skipping {len(skip_paths)} paths.")
-            paths = [p for p in paths if p not in skip_paths]
 
-        paths, file_sizes = map(
-            list,
-            zip(
-                *meta_provider.expand_paths(
-                    paths,
-                    self._filesystem,
-                    partitioning,
-                    ignore_missing_paths=ignore_missing_paths,
-                )
-            ),
-        )
+            path_to_size = dict(zip(paths, file_sizes))
+            paths = [p for p in paths if p not in skip_paths]
+            file_sizes = [path_to_size[p] for p in paths]
 
         if ignore_missing_paths and len(paths) == 0:
             raise ValueError(
