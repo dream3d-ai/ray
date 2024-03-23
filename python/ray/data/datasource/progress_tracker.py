@@ -166,7 +166,7 @@ class ProgressTracker:
         except ImportError:
             raise ImportError("Please install fsspec")
 
-        if not loasave_pathd_path.endswith(".progress"):
+        if not save_path.endswith(".progress"):
             raise ValueError("load_path must end with '.progress'")
 
         self._flush()

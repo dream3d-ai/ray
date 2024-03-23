@@ -295,6 +295,13 @@ class FileBasedDatasource(Datasource):
 
             DataContext._set_current(ctx)
             fs = _unwrap_s3_serialization_workaround(filesystem)
+
+            skip_keys = {}
+            if ctx.progress_tracker is not None:
+                skip_keys = ray.get(
+                    ray.get(ctx.progress_tracker.get_initial_progress.remote())
+                ).skip_keys
+
             for read_path in read_paths:
                 partitions: Dict[str, str] = {}
                 if partitioning is not None:
@@ -314,9 +321,16 @@ class FileBasedDatasource(Datasource):
                             block = block_accessor.append_column(
                                 "path", [read_path] * block_accessor.num_rows()
                             )
+
+                        if block[self._progress_index_column].isin(skip_keys).any():
+                            logger.get_logger().debug(
+                                f"Skipping block with keys {block[self._progress_index_column].unique().tolist()}"
+                            )
+                            continue
                         block_indices.extend(
                             list(block[self._progress_index_column].values)
                         )
+
                         yield block
 
                 if self.progress_tracker is not None:
