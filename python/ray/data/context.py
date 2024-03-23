@@ -4,12 +4,12 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import ray
 from ray._private.ray_constants import env_integer
-from ray.data.datasource.progress_tracker import ProgressTracker
 from ray.util.annotations import DeveloperAPI
 from ray.util.scheduling_strategies import SchedulingStrategyT
 
 if TYPE_CHECKING:
     from ray.data._internal.execution.interfaces import ExecutionOptions
+    from ray.data.progress_tracker import ProgressTracker
 
 # The context singleton on this process.
 _default_context: "Optional[DataContext]" = None
@@ -202,6 +202,7 @@ class DataContext:
         enable_get_object_locations_for_metrics: bool,
         use_runtime_metrics_scheduling: bool,
         write_file_retry_on_errors: List[str],
+        progress_tracker: Optional["ProgressTracker"] = None,
     ):
         """Private constructor (use get_current() instead)."""
         self.target_max_block_size = target_max_block_size
@@ -258,6 +259,7 @@ class DataContext:
         # the DataContext from the plugin implementations, as well as to avoid
         # circular dependencies.
         self._kv_configs: Dict[str, Any] = {}
+        self.progress_tracker = progress_tracker
 
     @staticmethod
     def get_current() -> "DataContext":

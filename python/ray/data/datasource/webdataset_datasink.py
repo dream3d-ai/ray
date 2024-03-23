@@ -7,11 +7,8 @@ from typing import Optional, Union
 
 import pyarrow
 
-import ray
-from ray.data.context import DataContext
 from ray.data.block import BlockAccessor
 from ray.data.datasource.file_datasink import BlockBasedFileDatasink
-from ray.data.datasource.progress_tracker import CACHED_PROGRESS_TRACKERS, RequiresFlush
 from ray.data.datasource.webdataset_datasource import (
     _apply_list,
     _default_encoder,
@@ -28,29 +25,18 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
         encoder: Optional[Union[bool, str, callable, list]] = True,
         *,
         file_format: str = "tar",
-        progress_path: str | None = None,
+        progress_index_column: str = "__key__",
         **file_datasink_kwargs,
     ):
-        
 
-        super().__init__(path, file_format="tar", **file_datasink_kwargs)
+        super().__init__(
+            path,
+            file_format=file_format,
+            progress_index_column=progress_index_column,
+            **file_datasink_kwargs,
+        )
 
         self.encoder = encoder
-        self.progress_tracker = None
-
-        if progress_path and not progress_path.endswith(".progress"):
-            raise ValueError("Progress path must end with .progress")
-
-        if progress_path:
-            ctx = DataContext.get_current()
-            progress_tracker_actor_name = ctx.get_config(key=progress_path)
-            self.progress_tracker = ray.get_actor(progress_tracker_actor_name)
-            
-            if self.progress_tracker is None:
-                raise ValueError(
-                    "Progress tracker must be initialized before the datasink."
-                )
-            logger.debug(f"Found progress tracker at {progress_path}")
 
     def write_block_to_file(self, block: BlockAccessor, file: "pyarrow.NativeFile"):
         stream = tarfile.open(fileobj=file, mode="w|")
@@ -81,10 +67,3 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
                 ti.mode, ti.uname, ti.gname = 0o644, "data", "data"
                 stream.addfile(ti, io.BytesIO(v))
         stream.close()
-
-        if self.progress_tracker is not None:
-            try:
-                ray.get(self.progress_tracker.put_completed(completed_keys))
-            except RequiresFlush:
-                ray.get(self.progress_tracker.write())
-                ray.get(self.progress_tracker.put_completed(completed_keys))

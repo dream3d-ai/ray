@@ -9,13 +9,8 @@ import tarfile
 from functools import partial
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
 
-import ray
 from ray.data.block import BlockAccessor
-from ray.data.context import DataContext
 from ray.data.datasource.file_based_datasource import FileBasedDatasource
-from ray.data.datasource.progress_tracker import (
-    ProgressTracker,
-)
 from ray.util.annotations import PublicAPI
 
 if TYPE_CHECKING:
@@ -322,44 +317,19 @@ class WebDatasetDatasource(FileBasedDatasource):
         filerename: Optional[Union[bool, callable, list]] = None,
         suffixes: Optional[Union[bool, callable, list]] = None,
         verbose_open: bool = False,
-        progress_path: str | None = None,
-        progress_save_interval: int = 10_000,
+        progress_index_column: str = "__key__",
         **file_based_datasource_kwargs,
     ):
-        
-
+        super().__init__(
+            paths,
+            progress_index_column=progress_index_column,
+            **file_based_datasource_kwargs,
+        )
         self.decoder = decoder
         self.fileselect = fileselect
         self.filerename = filerename
         self.suffixes = suffixes
         self.verbose_open = verbose_open
-
-        # Progress Tracking
-        self.progress_tracker = None
-
-        if progress_path and not progress_path.endswith(".progress"):
-            raise ValueError("Progress path must end with .progress")
-
-        skip_paths = None
-        if progress_path:
-            self.progress_tracker = ProgressTracker.options().remote(
-                progress_path,
-                save_interval=progress_save_interval,
-            )
-
-            skip_paths = ray.get(
-                ray.get(self.progress_tracker.get_initial_progress.remote())
-            ).skip_files
-
-            logger.debug(
-                f"Skipping {len(skip_paths)} files from progress tracker {progress_path}"
-            )
-
-        super().__init__(paths, skip_paths=skip_paths, **file_based_datasource_kwargs)
-
-        if progress_path:
-            ctx = DataContext.get_current()
-            ctx.set_config(key=progress_path, value=self.progress_tracker)
 
     def _read_stream(self, stream: "pyarrow.NativeFile", path: str):
         """Read and decode samples from a stream.
@@ -397,6 +367,3 @@ class WebDatasetDatasource(FileBasedDatasource):
             if self.decoder is not None:
                 sample = _apply_list(self.decoder, sample, default=_default_decoder)
             yield pd.DataFrame({k: [v] for k, v in sample.items()})
-
-        if self.progress_tracker is not None:
-            self.progress_tracker.put_pending.remote([(path, key) for key in keys])

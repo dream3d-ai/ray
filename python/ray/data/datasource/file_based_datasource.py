@@ -48,6 +48,7 @@ from ray.data.datasource.path_util import (
     _has_file_extension,
     _resolve_paths_and_filesystem,
 )
+from ray.data.datasource.progress_tracker import ProgressTracker
 from ray.util.annotations import Deprecated, DeveloperAPI, PublicAPI
 
 if TYPE_CHECKING:
@@ -153,7 +154,9 @@ class FileBasedDatasource(Datasource):
         shuffle: Union[Literal["files"], None] = None,
         include_paths: bool = False,
         file_extensions: Optional[List[str]] = None,
-        skip_paths: Optional[List[str]] = None,
+        progress_path: Optional[str] = None,
+        progress_save_interval: int = 10_000,
+        progress_index_column: str = "index",
     ):
         _check_pyarrow_version()
         self._schema = schema
@@ -163,6 +166,9 @@ class FileBasedDatasource(Datasource):
         self._partitioning = partitioning
         self._ignore_missing_paths = ignore_missing_paths
         self._include_paths = include_paths
+        self._progress_path = progress_path
+        self._progress_save_interval = progress_save_interval
+        self._progress_index_column = progress_index_column
         paths, self._filesystem = _resolve_paths_and_filesystem(paths, filesystem)
         paths, file_sizes = map(
             list,
@@ -175,6 +181,24 @@ class FileBasedDatasource(Datasource):
                 )
             ),
         )
+
+        if progress_path and not progress_path.endswith(".progress"):
+            raise ValueError("Progress path must end with .progress")
+
+        if progress_path:
+            self.progress_tracker = ProgressTracker.remote(
+                progress_path,
+                save_interval=progress_save_interval,
+            )
+            ctx = DataContext.get_current()
+            ctx.progress_tracker = self.progress_tracker
+
+            # Skip paths that have already been processed.
+            skip_paths = ray.get(
+                ray.get(self.progress_tracker.get_initial_progress.remote())
+            ).skip_files
+            logger.get_logger().debug(f"Skipping {len(skip_paths)} paths.")
+            paths = [p for p in paths if p not in skip_paths]
 
         if ignore_missing_paths and len(paths) == 0:
             raise ValueError(
@@ -189,10 +213,6 @@ class FileBasedDatasource(Datasource):
                 "cluster can't access your local files. To fix this issue, store "
                 "files in cloud storage or a distributed filesystem like NFS."
             )
-
-        if skip_paths is not None:
-            logger.get_logger().debug(f"Skipping {len(skip_paths)} paths.")
-            paths = [p for p in paths if p not in skip_paths]
 
         if self._partition_filter is not None:
             # Use partition filter to skip files which are not needed.
@@ -281,6 +301,7 @@ class FileBasedDatasource(Datasource):
                     read_path,
                     lambda: open_input_source(fs, read_path, **open_stream_args),
                 ) as f:
+                    block_indices = []
                     for block in read_stream(f, read_path):
                         if partitions:
                             block = _add_partitions(block, partitions)
@@ -289,7 +310,15 @@ class FileBasedDatasource(Datasource):
                             block = block_accessor.append_column(
                                 "path", [read_path] * block_accessor.num_rows()
                             )
+                        block_indices.extend(
+                            list(block[self._progress_index_column].values)
+                        )
                         yield block
+
+                if self.progress_tracker is not None:
+                    self.progress_tracker.put_pending.remote(
+                        [(read_path, index) for index in block_indices]
+                    )
 
         def create_read_task_fn(read_paths, num_threads):
             def read_task_fn():

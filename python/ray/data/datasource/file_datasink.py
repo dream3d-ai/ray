@@ -2,6 +2,7 @@ import posixpath
 import warnings
 from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional
 
+import ray
 from ray._private.utils import _add_creatable_buckets_param_if_s3_uri
 from ray.data._internal.dataset_logger import DatasetLogger
 from ray.data._internal.execution.interfaces import TaskContext
@@ -15,6 +16,7 @@ from ray.data.datasource.filename_provider import (
     _DefaultFilenameProvider,
 )
 from ray.data.datasource.path_util import _resolve_paths_and_filesystem
+from ray.data.datasource.progress_tracker import RequiresFlush
 from ray.util.annotations import DeveloperAPI
 
 if TYPE_CHECKING:
@@ -39,6 +41,8 @@ class _FileDatasink(Datasink):
         block_path_provider: Optional[BlockWritePathProvider] = None,
         dataset_uuid: Optional[str] = None,
         file_format: Optional[str] = None,
+        progress_path: Optional[str] = None,
+        progress_index_column: str = "index",
     ):
         """Initialize this datasink.
 
@@ -70,6 +74,16 @@ class _FileDatasink(Datasink):
             filename_provider = _DefaultFilenameProvider(
                 dataset_uuid=dataset_uuid, file_format=file_format
             )
+
+        ctx = DataContext.get_current()
+        self.progress_tracker = ctx.progress_tracker
+        if progress_path is not None and self.progress_tracker is None:
+            raise ValueError(
+                "Passed progress_path but no progress tracker is available."
+            )
+
+        self.progress_path = progress_path
+        self.progress_index_column = progress_index_column
 
         self.unresolved_path = path
         paths, self.filesystem = _resolve_paths_and_filesystem(path, filesystem)
@@ -111,7 +125,9 @@ class _FileDatasink(Datasink):
         num_rows_written = 0
 
         block_index = 0
+        block_indices = []
         for block in blocks:
+            block_indices.extend(list(block[self.progress_index_column].values))
             block = BlockAccessor.for_block(block)
             if block.num_rows() == 0:
                 continue
@@ -120,6 +136,13 @@ class _FileDatasink(Datasink):
 
             num_rows_written += block.num_rows()
             block_index += 1
+
+        if self.progress_tracker is not None:
+            try:
+                ray.get(self.progress_tracker.put_completed.remote(block_indices))
+            except RequiresFlush:
+                ray.get(self.progress_tracker.write.remote(self.progress_path))
+                ray.get(self.progress_tracker.put_completed.remote(block_indices))
 
         if num_rows_written == 0:
             logger.get_logger().warning(

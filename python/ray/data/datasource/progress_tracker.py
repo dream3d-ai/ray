@@ -7,7 +7,6 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 import ray
-from ray.data._internal.remote_fn import cached_remote_fn
 
 logger = logging.getLogger(__name__)
 
@@ -72,16 +71,20 @@ class Progress:
         )
 
 
-class ProgressTracker_:
+@ray.remote(concurrency_groups={"pending": 1000, "completed": 1000, "write": 1})
+class ProgressTracker:
     def __init__(
         self,
-        save_path: str,
+        progress_path: str,
         save_interval: int = 1_000,
     ):
         if save_interval < 1:
             raise ValueError("save_interval must be greater than 0")
 
-        self.save_path = save_path
+        if not progress_path.endswith(".progress"):
+            raise ValueError("load_path must end with '.progress'")
+
+        self.progress_path = progress_path
         self.progress = self.load()
         self.initial_progress_ref = ray.put(self.progress)
 
@@ -157,16 +160,19 @@ class ProgressTracker_:
                     break
 
     @ray.method(concurrency_group="write")
-    def write(self):
+    def write(self, save_path: str):
         try:
             import fsspec
         except ImportError:
             raise ImportError("Please install fsspec")
 
+        if not loasave_pathd_path.endswith(".progress"):
+            raise ValueError("load_path must end with '.progress'")
+
         self._flush()
 
-        logger.debug(f"Writing progress tracker to {self.save_path}")
-        with fsspec.open(self.save_path, "wb", compression="gzip") as f:
+        logger.debug(f"Writing progress tracker to {save_path}")
+        with fsspec.open(save_path, "wb", compression="gzip") as f:
             f.write(self.progress.to_json().encode("utf-8"))
 
         return True
@@ -178,13 +184,13 @@ class ProgressTracker_:
             raise ImportError("Please install fsspec")
 
         try:
-            with fsspec.open(self.save_path, "rb", compression="gzip") as f:
+            with fsspec.open(self.progress_path, "rb", compression="gzip") as f:
                 progress = Progress.load(f.read())
-            logger.info(f"Loading progress from {self.save_path}")
+            logger.info(f"Loading progress from {self.progress_path}")
         except FileNotFoundError:
-            logger.info(f"Creating new progress file at {self.save_path}")
+            logger.info(f"Creating new progress file at {self.progress_path}")
             progress = Progress()
-            with fsspec.open(self.save_path, "wb", compression="gzip") as f:
+            with fsspec.open(self.progress_path, "wb", compression="gzip") as f:
                 f.write(progress.to_json().encode("utf-8"))
 
         return progress
@@ -194,12 +200,3 @@ class ProgressTracker_:
 
     def __del__(self):
         self.shutdown()
-
-
-ProgressTracker = cached_remote_fn(
-    ProgressTracker_,
-    concurrency_groups={"pending": 1000, "completed": 1000, "write": 1},
-)
-
-
-CACHED_PROGRESS_TRACKERS: dict[str, ProgressTracker] = {}
