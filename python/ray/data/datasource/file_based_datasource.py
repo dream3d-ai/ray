@@ -316,13 +316,14 @@ class FileBasedDatasource(Datasource):
                     for block in read_stream(f, read_path):
                         if partitions:
                             block = _add_partitions(block, partitions)
+
+                        block_accessor = BlockAccessor.for_block(block)
                         if self._include_paths:
-                            block_accessor = BlockAccessor.for_block(block)
                             block = block_accessor.append_column(
                                 "path", [read_path] * block_accessor.num_rows()
                             )
 
-                        block_df = block.to_pandas()
+                        block_df = block_accessor.to_pandas()
                         if block_df[self._progress_index_column].isin(skip_keys).any():
                             logger.get_logger().debug(
                                 f"Skipping block with keys {block_df[self._progress_index_column].unique().tolist()}"
