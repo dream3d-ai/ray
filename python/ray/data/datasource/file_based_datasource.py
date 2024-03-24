@@ -323,16 +323,16 @@ class FileBasedDatasource(Datasource):
                                 "path", [read_path] * block_accessor.num_rows()
                             )
 
-                        block_df = block_accessor.to_pandas()
-                        if block_df[self._progress_index_column].isin(skip_keys).any():
+                        block_idxs = block_accessor.get_values(
+                            self._progress_index_column
+                        )
+                        if set(block_idxs) & skip_keys:
                             logger.get_logger().debug(
-                                f"Skipping block with keys {block_df[self._progress_index_column].unique().tolist()}"
+                                f"Skipping block with keys: {block_idxs}"
                             )
                             continue
 
-                        block_indices.extend(
-                            list(block_df[self._progress_index_column].values)
-                        )
+                        block_indices.extend(block_idxs)
 
                         yield block
 

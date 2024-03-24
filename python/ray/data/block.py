@@ -419,6 +419,10 @@ class BlockAccessor:
         """Combine rows with the same key into an accumulator."""
         raise NotImplementedError
 
+    def get_values(self, key: str) -> list:
+        """Returns the values from a column in the block."""
+        raise NotImplementedError
+
     @staticmethod
     def merge_sorted_blocks(
         blocks: List["Block"], sort_key: "SortKey"

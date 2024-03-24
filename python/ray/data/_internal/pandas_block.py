@@ -169,6 +169,9 @@ class PandasBlockAccessor(TableBlockAccessor):
         table[name] = data
         return table
 
+    def get_values(self, key: str) -> List[Any]:
+        return self._table[key].tolist()
+
     @staticmethod
     def _build_tensor_row(row: PandasRow) -> np.ndarray:
         from ray.data.extensions import TensorArrayElement

@@ -178,6 +178,9 @@ class ArrowBlockAccessor(TableBlockAccessor):
 
         return self._table.append_column(name, [data])
 
+    def get_values(self, key: str) -> List[Any]:
+        return self._table[key].to_pylist()
+
     @classmethod
     def from_bytes(cls, data: bytes) -> "ArrowBlockAccessor":
         reader = pyarrow.ipc.open_stream(data)

@@ -129,9 +129,7 @@ class _FileDatasink(Datasink):
         block_indices = []
         for block in blocks:
             block = BlockAccessor.for_block(block)
-
-            block_df = block.to_pandas()
-            block_indices.extend(list(block_df[self.progress_index_column].values))
+            block_indices.extend(block.get_values(self.progress_index_column))
 
             if block.num_rows() == 0:
                 continue
