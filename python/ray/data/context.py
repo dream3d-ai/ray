@@ -160,6 +160,8 @@ DEFAULT_WRITE_FILE_RETRY_ON_ERRORS = [
     "AWS Error SLOW_DOWN",
 ]
 
+DEFAULT_PROGRESS_INDEX_COLUMN = "index"
+
 
 @DeveloperAPI
 class DataContext:
@@ -202,7 +204,8 @@ class DataContext:
         enable_get_object_locations_for_metrics: bool,
         use_runtime_metrics_scheduling: bool,
         write_file_retry_on_errors: List[str],
-        progress_tracker: Optional["ProgressTracker"] = None,
+        progress_tracker: Optional["ProgressTracker"],
+        progress_index_column: str,
     ):
         """Private constructor (use get_current() instead)."""
         self.target_max_block_size = target_max_block_size
@@ -260,6 +263,7 @@ class DataContext:
         # circular dependencies.
         self._kv_configs: Dict[str, Any] = {}
         self.progress_tracker = progress_tracker
+        self.progress_index_column = progress_index_column
 
     @staticmethod
     def get_current() -> "DataContext":
@@ -312,6 +316,8 @@ class DataContext:
                     enable_get_object_locations_for_metrics=DEFAULT_ENABLE_GET_OBJECT_LOCATIONS_FOR_METRICS,  # noqa E501
                     use_runtime_metrics_scheduling=DEFAULT_USE_RUNTIME_METRICS_SCHEDULING,  # noqa: E501
                     write_file_retry_on_errors=DEFAULT_WRITE_FILE_RETRY_ON_ERRORS,
+                    progress_tracker=None,
+                    progress_index_column=DEFAULT_PROGRESS_INDEX_COLUMN,
                 )
 
             return _default_context

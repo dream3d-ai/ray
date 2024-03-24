@@ -77,14 +77,17 @@ class _FileDatasink(Datasink):
 
         ctx = DataContext.get_current()
         self.progress_tracker = ctx.progress_tracker
+        self.progress_index_column = ctx.progress_index_column
+
         if progress_path is not None and self.progress_tracker is None:
             raise ValueError(
                 "Passed progress_path but no progress tracker is available."
             )
 
         self.progress_path = progress_path
-        self.progress_index_column = progress_index_column
-        ray.get(self.progress_tracker.set_save_path.remote(progress_path))
+
+        if self.progress_tracker is not None:
+            ray.get(self.progress_tracker.set_save_path.remote(progress_path))
 
         self.unresolved_path = path
         paths, self.filesystem = _resolve_paths_and_filesystem(path, filesystem)
@@ -144,8 +147,9 @@ class _FileDatasink(Datasink):
             try:
                 ray.get(self.progress_tracker.put_completed.remote(block_indices))
             except RequiresFlush:
-                ray.get(self.progress_tracker.write.remote())
-                ray.get(self.progress_tracker.put_completed.remote(block_indices))
+                ray.get(
+                    self.progress_tracker.write_and_put_completed.remote(block_indices)
+                )
 
         if num_rows_written == 0:
             logger.get_logger().warning(

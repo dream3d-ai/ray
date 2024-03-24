@@ -193,6 +193,7 @@ class FileBasedDatasource(Datasource):
             )
             ctx = DataContext.get_current()
             ctx.progress_tracker = self.progress_tracker
+            ctx.progress_index_column = self._progress_index_column
 
             # Skip paths that have already been processed.
             skip_paths = ray.get(

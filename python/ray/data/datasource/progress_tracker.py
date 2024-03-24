@@ -76,7 +76,7 @@ class ProgressTracker:
     def __init__(
         self,
         progress_path: str,
-        save_interval: int = 1_000,
+        save_interval: int = 10_000,
     ):
         if save_interval < 1:
             raise ValueError("save_interval must be greater than 0")
@@ -121,13 +121,10 @@ class ProgressTracker:
 
     @ray.method(concurrency_group="completed")
     def put_completed(self, keys: list[Key]) -> None:
-        if (
-            self.completed_queue.maxsize > 0
-            and len(keys) + self.completed_queue.qsize() > self.completed_queue.maxsize
-        ):
+        if self.completed_queue.full():
             raise RequiresFlush()
         for key in keys:
-            self.completed_queue.put_nowait(key)
+            self.completed_queue.put(key)
 
     def get_pending(self) -> list[tuple[Path, Key]]:
         return [
@@ -178,6 +175,16 @@ class ProgressTracker:
         logger.debug(f"Writing progress tracker to {self.save_path}")
         with fsspec.open(self.save_path, "wb", compression="gzip") as f:
             f.write(self.progress.to_json().encode("utf-8"))
+
+    @ray.method(concurrency_group="write")
+    def write_and_put_completed(self, keys: list[Key]):
+        while True:
+            try:
+                self.write()
+                self.put_completed(keys)
+                return
+            except RequiresFlush:
+                pass
 
     def load(self) -> Progress:
         try:
