@@ -62,19 +62,6 @@ class _FileDatasink(Datasink):
         if open_stream_args is None:
             open_stream_args = {}
 
-        if block_path_provider is not None:
-            warnings.warn(
-                "`block_path_provider` has been deprecated in favor of "
-                "`filename_provider`. For more information, see "
-                "https://docs.ray.io/en/master/data/api/doc/ray.data.datasource.FilenameProvider.html",  # noqa: E501
-                DeprecationWarning,
-            )
-
-        if filename_provider is None and block_path_provider is None:
-            filename_provider = _DefaultFilenameProvider(
-                dataset_uuid=dataset_uuid, file_format=file_format
-            )
-
         ctx = DataContext.get_current()
         self.progress_tracker = ctx.progress_tracker
         self.progress_index_column = ctx.progress_index_column
@@ -88,6 +75,25 @@ class _FileDatasink(Datasink):
 
         if self.progress_tracker is not None:
             ray.get(self.progress_tracker.set_save_path.remote(progress_path))
+
+        if block_path_provider is not None:
+            warnings.warn(
+                "`block_path_provider` has been deprecated in favor of "
+                "`filename_provider`. For more information, see "
+                "https://docs.ray.io/en/master/data/api/doc/ray.data.datasource.FilenameProvider.html",  # noqa: E501
+                DeprecationWarning,
+            )
+
+        if filename_provider is None and block_path_provider is None:
+            filename_provider = _DefaultFilenameProvider(
+                dataset_uuid=dataset_uuid,
+                file_format=file_format,
+                start_block_index=ray.get(
+                    self.progress_tracker.get_block_start_index.remote()
+                )
+                if self.progress_tracker is not None
+                else 0,
+            )
 
         self.unresolved_path = path
         paths, self.filesystem = _resolve_paths_and_filesystem(path, filesystem)

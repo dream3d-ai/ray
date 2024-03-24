@@ -95,20 +95,26 @@ class FilenameProvider:
 
 class _DefaultFilenameProvider(FilenameProvider):
     def __init__(
-        self, dataset_uuid: Optional[str] = None, file_format: Optional[str] = None
+        self,
+        dataset_uuid: Optional[str] = None,
+        file_format: Optional[str] = None,
+        start_block_index: int = 0,
     ):
         self._dataset_uuid = dataset_uuid
         self._file_format = file_format
+        self._start_block_index = start_block_index
 
     def get_filename_for_block(
         self, block: Block, task_index: int, block_index: int
     ) -> str:
+        block_index += self._start_block_index
         file_id = f"{task_index:06}_{block_index:06}"
         return self._generate_filename(file_id)
 
     def get_filename_for_row(
         self, row: Dict[str, Any], task_index: int, block_index: int, row_index: int
     ) -> str:
+        block_index += self._start_block_index
         file_id = f"{task_index:06}_{block_index:06}_{row_index:06}"
         return self._generate_filename(file_id)
 

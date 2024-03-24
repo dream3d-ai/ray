@@ -29,6 +29,12 @@ class Progress:
     )
 
     @property
+    def max_block_index(self) -> int:
+        return max(
+            int(path.split("/")[-1].split("_")[1]) for path in self.completed.keys()
+        )
+
+    @property
     def skip_files(self) -> set[Path]:
         return set(self.completed.keys()) - set(self.pending.keys())
 
@@ -89,6 +95,7 @@ class ProgressTracker:
 
         self.progress = self.load()
         self.initial_progress_ref = ray.put(self.progress)
+        self.block_start_index = self.progress.max_block_index + 1
 
         self.pending_queue = queue.Queue()
         self.completed_queue = queue.Queue(
@@ -97,6 +104,9 @@ class ProgressTracker:
 
     def get_initial_progress(self) -> ray.ObjectRef:
         return self.initial_progress_ref
+
+    def get_block_start_index(self) -> int:
+        return self.block_start_index
 
     def set_save_path(self, save_path: str):
         if not save_path.endswith(".progress"):
@@ -175,6 +185,8 @@ class ProgressTracker:
         logger.debug(f"Writing progress tracker to {self.save_path}")
         with fsspec.open(self.save_path, "wb", compression="gzip") as f:
             f.write(self.progress.to_json().encode("utf-8"))
+
+        print("Progress tracker written")
 
     @ray.method(concurrency_group="write")
     def write_and_put_completed(self, keys: list[Key]):

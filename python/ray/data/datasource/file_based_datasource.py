@@ -297,7 +297,7 @@ class FileBasedDatasource(Datasource):
             DataContext._set_current(ctx)
             fs = _unwrap_s3_serialization_workaround(filesystem)
 
-            skip_keys = {}
+            skip_keys = set()
             if ctx.progress_tracker is not None:
                 skip_keys = ray.get(
                     ray.get(ctx.progress_tracker.get_initial_progress.remote())
