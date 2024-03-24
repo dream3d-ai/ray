@@ -264,10 +264,11 @@ def _generate_transform_fn_for_filter(
             else:
                 completed_keys.append(row[progress_index_column])
 
-        try:
-            ctx.progress_tracker.put_completed.remote(completed_keys)
-        except RequiresFlush:
-            ctx.progress_tracker.write_and_put_completed.remote(completed_keys)
+        if ctx.progress_tracker is not None:
+            try:
+                ctx.progress_tracker.put_completed.remote(completed_keys)
+            except RequiresFlush:
+                ctx.progress_tracker.write_and_put_completed.remote(completed_keys)
 
     return transform_fn
 
