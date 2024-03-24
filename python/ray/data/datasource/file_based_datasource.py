@@ -322,11 +322,24 @@ class FileBasedDatasource(Datasource):
                                 "path", [read_path] * block_accessor.num_rows()
                             )
 
-                        if block[self._progress_index_column].isin(skip_keys).any():
+                        if (
+                            isinstance(block, "pandas.DataFrame")
+                            and block[self._progress_index_column].isin(skip_keys).any()
+                        ):
                             logger.get_logger().debug(
                                 f"Skipping block with keys {block[self._progress_index_column].unique().tolist()}"
                             )
                             continue
+                        elif (
+                            isinstance(block, "pyarrow.Table")
+                            and set(block[self._progress_index_column].to_pylist())
+                            & skip_keys
+                        ):
+                            logger.get_logger().debug(
+                                f"Skipping block with keys {block[self._progress_index_column].unique().tolist()}"
+                            )
+                            continue
+
                         block_indices.extend(
                             list(block[self._progress_index_column].values)
                         )

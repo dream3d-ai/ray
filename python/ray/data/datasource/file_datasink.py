@@ -20,6 +20,7 @@ from ray.data.datasource.progress_tracker import RequiresFlush
 from ray.util.annotations import DeveloperAPI
 
 if TYPE_CHECKING:
+    import pandas
     import pyarrow
 
 logger = DatasetLogger(__name__)
@@ -122,12 +123,17 @@ class _FileDatasink(Datasink):
         blocks: Iterable[Block],
         ctx: TaskContext,
     ) -> Any:
+
         num_rows_written = 0
 
         block_index = 0
         block_indices = []
         for block in blocks:
-            block_indices.extend(list(block[self.progress_index_column].values))
+            if isinstance(block, "pyarrow.Table"):
+                block_indices.extend(block[self.progress_index_column].to_pylist())
+            elif isinstance(block, "pandas.DataFrame"):
+                block_indices.extend(list(block[self.progress_index_column].values))
+
             block = BlockAccessor.for_block(block)
             if block.num_rows() == 0:
                 continue
