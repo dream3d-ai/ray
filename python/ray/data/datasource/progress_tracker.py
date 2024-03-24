@@ -30,6 +30,9 @@ class Progress:
 
     @property
     def max_block_index(self) -> int:
+        if not self.completed.keys():
+            return -1
+            
         return max(
             int(path.split("/")[-1].split("_")[1]) for path in self.completed.keys()
         )
