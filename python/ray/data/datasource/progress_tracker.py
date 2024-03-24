@@ -84,7 +84,9 @@ class ProgressTracker:
         if not progress_path.endswith(".progress"):
             raise ValueError("load_path must end with '.progress'")
 
-        self.progress_path = progress_path
+        self.load_path = progress_path
+        self.save_path = None
+
         self.progress = self.load()
         self.initial_progress_ref = ray.put(self.progress)
 
@@ -93,10 +95,15 @@ class ProgressTracker:
             maxsize=save_interval,
         )
 
-        atexit.register(self.write)
-
     def get_initial_progress(self) -> ray.ObjectRef:
         return self.initial_progress_ref
+
+    def set_save_path(self, save_path: str):
+        if not save_path.endswith(".progress"):
+            raise ValueError("load_path must end with '.progress'")
+
+        self.save_path = save_path
+        atexit.register(self.write)
 
     @ray.method(concurrency_group="pending")
     def put_pending(self, items: list[tuple[Path, Key]]) -> None:
@@ -140,7 +147,7 @@ class ProgressTracker:
         completed_keys: list[Key] = self.get_completed()
         pending_path_and_keys: list[tuple[Path, Key]] = self.get_pending()
 
-        pending: dict[Path, set[Key]] = {}
+        pending: dict[Path, set[Key]] = defaultdict(set)
         for path, key in pending_path_and_keys:
             pending[path].add(key)
 
@@ -160,43 +167,32 @@ class ProgressTracker:
                     break
 
     @ray.method(concurrency_group="write")
-    def write(self, save_path: str):
+    def write(self):
         try:
             import fsspec
         except ImportError:
             raise ImportError("Please install fsspec")
-
-        if not save_path.endswith(".progress"):
-            raise ValueError("load_path must end with '.progress'")
 
         self._flush()
 
-        logger.debug(f"Writing progress tracker to {save_path}")
-        with fsspec.open(save_path, "wb", compression="gzip") as f:
+        logger.debug(f"Writing progress tracker to {self.save_path}")
+        with fsspec.open(self.save_path, "wb", compression="gzip") as f:
             f.write(self.progress.to_json().encode("utf-8"))
 
-        return True
-
-    def load(self):
+    def load(self) -> Progress:
         try:
             import fsspec
         except ImportError:
             raise ImportError("Please install fsspec")
 
-        try:
-            with fsspec.open(self.progress_path, "rb", compression="gzip") as f:
-                progress = Progress.load(f.read())
-            logger.info(f"Loading progress from {self.progress_path}")
-        except FileNotFoundError:
-            logger.info(f"Creating new progress file at {self.progress_path}")
-            progress = Progress()
-            with fsspec.open(self.progress_path, "wb", compression="gzip") as f:
-                f.write(progress.to_json().encode("utf-8"))
-
+        with fsspec.open(self.load_path, "rb", compression="gzip") as f:
+            progress = Progress.load(f.read())
+        logger.info(f"Loading progress from {self.load_path}")
         return progress
 
     def shutdown(self):
-        self.write()
+        if self.save_path is not None:
+            self.write()
 
     def __del__(self):
         self.shutdown()

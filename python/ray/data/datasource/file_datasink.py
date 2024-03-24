@@ -84,6 +84,7 @@ class _FileDatasink(Datasink):
 
         self.progress_path = progress_path
         self.progress_index_column = progress_index_column
+        ray.get(self.progress_tracker.set_save_path.remote(progress_path))
 
         self.unresolved_path = path
         paths, self.filesystem = _resolve_paths_and_filesystem(path, filesystem)
@@ -143,7 +144,7 @@ class _FileDatasink(Datasink):
             try:
                 ray.get(self.progress_tracker.put_completed.remote(block_indices))
             except RequiresFlush:
-                ray.get(self.progress_tracker.write.remote(self.progress_path))
+                ray.get(self.progress_tracker.write.remote())
                 ray.get(self.progress_tracker.put_completed.remote(block_indices))
 
         if num_rows_written == 0:
