@@ -72,9 +72,14 @@ class _FileDatasink(Datasink):
             )
 
         self.progress_path = progress_path
+        self.block_start_index = 0
 
         if self.progress_tracker is not None:
             ray.get(self.progress_tracker.set_save_path.remote(progress_path))
+            progress = ray.get(
+                ray.get(self.progress_tracker.get_initial_progress.remote())
+            )
+            self.block_start_index = progress.max_block_index + 1
 
         if block_path_provider is not None:
             warnings.warn(
@@ -88,11 +93,6 @@ class _FileDatasink(Datasink):
             filename_provider = _DefaultFilenameProvider(
                 dataset_uuid=dataset_uuid,
                 file_format=file_format,
-                start_block_index=ray.get(
-                    self.progress_tracker.get_block_start_index.remote()
-                )
-                if self.progress_tracker is not None
-                else 0,
             )
 
         self.unresolved_path = path
@@ -135,11 +135,10 @@ class _FileDatasink(Datasink):
 
         num_rows_written = 0
 
-        block_index = 0
-        block_indices = []
+        block_index = self.block_start_index
         for block in blocks:
             block = BlockAccessor.for_block(block)
-            block_indices.extend(block.get_values(self.progress_index_column))
+            block_data_keys = block.get_values(self.progress_index_column)
 
             if block.num_rows() == 0:
                 continue
@@ -149,13 +148,19 @@ class _FileDatasink(Datasink):
             num_rows_written += block.num_rows()
             block_index += 1
 
-        if self.progress_tracker is not None:
-            try:
-                ray.get(self.progress_tracker.put_completed.remote(block_indices))
-            except RequiresFlush:
-                ray.get(
-                    self.progress_tracker.write_and_put_completed.remote(block_indices)
-                )
+            if self.progress_tracker is not None:
+                try:
+                    ray.get(
+                        self.progress_tracker.put_completed.remote(
+                            block_data_keys, block_index
+                        )
+                    )
+                except RequiresFlush:
+                    ray.get(
+                        self.progress_tracker.write_and_put_completed.remote(
+                            block_data_keys
+                        )
+                    )
 
         if num_rows_written == 0:
             logger.get_logger().warning(

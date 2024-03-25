@@ -27,15 +27,7 @@ class Progress:
     completed: dict[Path, set[Key]] = field(
         default_factory=lambda: defaultdict(set), metadata="path -> keys"
     )
-
-    @property
-    def max_block_index(self) -> int:
-        if not self.completed.keys():
-            return -1
-            
-        return max(
-            int(path.split("/")[-1].split("_")[1]) for path in self.completed.keys()
-        )
+    max_block_index: int = -1
 
     @property
     def skip_files(self) -> set[Path]:
@@ -98,7 +90,6 @@ class ProgressTracker:
 
         self.progress = self.load()
         self.initial_progress_ref = ray.put(self.progress)
-        self.block_start_index = self.progress.max_block_index + 1
 
         self.pending_queue = queue.Queue()
         self.completed_queue = queue.Queue(
@@ -107,9 +98,6 @@ class ProgressTracker:
 
     def get_initial_progress(self) -> ray.ObjectRef:
         return self.initial_progress_ref
-
-    def get_block_start_index(self) -> int:
-        return self.block_start_index
 
     def set_save_path(self, save_path: str):
         if not save_path.endswith(".progress"):
@@ -133,11 +121,14 @@ class ProgressTracker:
                     sleep *= 2
 
     @ray.method(concurrency_group="completed")
-    def put_completed(self, keys: list[Key]) -> None:
+    def put_completed(self, keys: list[Key], block_index: int | None = None) -> None:
         if self.completed_queue.full():
             raise RequiresFlush()
         for key in keys:
             self.completed_queue.put(key)
+
+        if block_index is not None and block_index > self.progress.max_block_index:
+            self.progress.max_block_index = block_index
 
     def get_pending(self) -> list[tuple[Path, Key]]:
         return [
@@ -189,8 +180,6 @@ class ProgressTracker:
         with fsspec.open(self.save_path, "wb", compression="gzip") as f:
             f.write(self.progress.to_json().encode("utf-8"))
 
-        print("Progress tracker written")
-
     @ray.method(concurrency_group="write")
     def write_and_put_completed(self, keys: list[Key]):
         while True:
@@ -207,9 +196,13 @@ class ProgressTracker:
         except ImportError:
             raise ImportError("Please install fsspec")
 
-        with fsspec.open(self.load_path, "rb", compression="gzip") as f:
-            progress = Progress.load(f.read())
-        logger.info(f"Loading progress from {self.load_path}")
+        try:
+            with fsspec.open(self.load_path, "rb", compression="gzip") as f:
+                progress = Progress.load(f.read())
+            logger.info(f"Loading progress from {self.load_path}")
+        except FileNotFoundError:
+            progress = Progress()
+            logger.info(f"Progress file not found at {self.load_path}, starting fresh")
         return progress
 
     def shutdown(self):
