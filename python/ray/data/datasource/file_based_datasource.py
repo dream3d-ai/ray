@@ -182,6 +182,9 @@ class FileBasedDatasource(Datasource):
             ),
         )
 
+        ctx = DataContext.get_current()
+        ctx.progress_index_column = self._progress_index_column
+
         if progress_path and not progress_path.endswith(".progress"):
             raise ValueError("Progress path must end with .progress")
 
@@ -191,9 +194,7 @@ class FileBasedDatasource(Datasource):
                 progress_path,
                 save_interval=progress_save_interval,
             )
-            ctx = DataContext.get_current()
             ctx.progress_tracker = self.progress_tracker
-            ctx.progress_index_column = self._progress_index_column
 
             # Skip paths that have already been processed.
             skip_paths = ray.get(

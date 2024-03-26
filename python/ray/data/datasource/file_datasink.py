@@ -42,7 +42,6 @@ class _FileDatasink(Datasink):
         dataset_uuid: Optional[str] = None,
         file_format: Optional[str] = None,
         progress_path: Optional[str] = None,
-        progress_index_column: str = "index",
     ):
         """Initialize this datasink.
 
