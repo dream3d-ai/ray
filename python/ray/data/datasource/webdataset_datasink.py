@@ -25,14 +25,11 @@ class _WebDatasetDatasink(BlockBasedFileDatasink):
         encoder: Optional[Union[bool, str, callable, list]] = True,
         *,
         file_format: str = "tar",
-        progress_index_column: str = "__key__",
         **file_datasink_kwargs,
     ):
-
         super().__init__(
             path,
             file_format=file_format,
-            progress_index_column=progress_index_column,
             **file_datasink_kwargs,
         )
 
