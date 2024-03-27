@@ -149,6 +149,9 @@ class _FileDatasink(Datasink):
             if self.progress_tracker is not None:
                 self.progress_tracker.put_completed.remote(block_data_keys, block_index)
 
+        if self.progress_tracker is not None:
+            self.progress_tracker.write.remote()
+
         if num_rows_written == 0:
             logger.get_logger().warning(
                 f"Skipped writing empty dataset with UUID {self.dataset_uuid} at "
