@@ -39,7 +39,6 @@ from ray.data.block import (
     UserDefinedFunction,
 )
 from ray.data.context import DataContext
-from ray.data.datasource.progress_tracker import RequiresFlush
 
 
 def plan_udf_map_op(
@@ -254,21 +253,14 @@ def _generate_transform_fn_for_filter(
     fn: UserDefinedFunction,
 ) -> MapTransformCallable[Row, Row]:
     def transform_fn(rows: Iterable[Row], _: TaskContext) -> Iterable[Row]:
-        completed_keys = []
         ctx = DataContext.get_current()
         progress_index_column = ctx.progress_index_column
 
         for row in rows:
             if fn(row):
                 yield row
-            else:
-                completed_keys.append(row[progress_index_column])
-
-        if ctx.progress_tracker is not None:
-            try:
-                ctx.progress_tracker.put_completed.remote(completed_keys)
-            except RequiresFlush:
-                ctx.progress_tracker.write_and_put_completed.remote(completed_keys)
+            elif ctx.progress_tracker is not None:
+                ctx.progress_tracker.put_completed.remote([row[progress_index_column]])
 
     return transform_fn
 

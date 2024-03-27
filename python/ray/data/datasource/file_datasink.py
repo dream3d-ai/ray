@@ -16,7 +16,6 @@ from ray.data.datasource.filename_provider import (
     _DefaultFilenameProvider,
 )
 from ray.data.datasource.path_util import _resolve_paths_and_filesystem
-from ray.data.datasource.progress_tracker import RequiresFlush
 from ray.util.annotations import DeveloperAPI
 
 if TYPE_CHECKING:
@@ -148,18 +147,7 @@ class _FileDatasink(Datasink):
             block_index += 1
 
             if self.progress_tracker is not None:
-                try:
-                    ray.get(
-                        self.progress_tracker.put_completed.remote(
-                            block_data_keys, block_index
-                        )
-                    )
-                except RequiresFlush:
-                    ray.get(
-                        self.progress_tracker.write_and_put_completed.remote(
-                            block_data_keys
-                        )
-                    )
+                self.progress_tracker.put_completed.remote(block_data_keys, block_index)
 
         if num_rows_written == 0:
             logger.get_logger().warning(

@@ -95,6 +95,7 @@ class ProgressTracker:
         self.completed_queue = queue.Queue(
             maxsize=save_interval,
         )
+        self.write_lock = False
 
     def get_initial_progress(self) -> ray.ObjectRef:
         return self.initial_progress_ref
@@ -122,9 +123,13 @@ class ProgressTracker:
 
     @ray.method(concurrency_group="completed")
     def put_completed(self, keys: list[Key], block_index: int | None = None) -> None:
-        if self.completed_queue.full():
-            raise RequiresFlush()
         for key in keys:
+            while self.write_lock:
+                time.sleep(0.1)
+
+            if self.completed_queue.full():
+                self.write()
+
             self.completed_queue.put(key)
 
         if block_index is not None and block_index > self.progress.max_block_index:
@@ -143,6 +148,8 @@ class ProgressTracker:
 
     def _flush(self):
         logger.debug("Syncing progress tracker")
+
+        self.write_lock = True
 
         # flush the queues
         completed_keys: list[Key] = self.get_completed()
@@ -167,6 +174,8 @@ class ProgressTracker:
                     self.progress.pending[path].remove(key)
                     break
 
+        self.write_lock = False
+
     @ray.method(concurrency_group="write")
     def write(self):
         try:
@@ -179,16 +188,6 @@ class ProgressTracker:
         logger.debug(f"Writing progress tracker to {self.save_path}")
         with fsspec.open(self.save_path, "wb", compression="gzip") as f:
             f.write(self.progress.to_json().encode("utf-8"))
-
-    @ray.method(concurrency_group="write")
-    def write_and_put_completed(self, keys: list[Key]):
-        while True:
-            try:
-                self.write()
-                self.put_completed(keys)
-                return
-            except RequiresFlush:
-                pass
 
     def load(self) -> Progress:
         try:
